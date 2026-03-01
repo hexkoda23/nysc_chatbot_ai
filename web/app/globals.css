@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --radius: 1rem;
+  /* NYSC Light Palette */
+  --bg-primary: #F5FAF7;         /* soft off‑white with green tint */
+  --bg-secondary: #FFFFFF;       /* cards */
+  --sidebar-bg: #E8F3EA;         /* light sidebar */
+  --border-default: #D5E5D8;     /* subtle greenish border */
+  --text-primary: #0F2416;       /* charcoal with green hue */
+  --text-secondary: #3F6848;     /* muted green‑gray */
+  --accent-start: #0B7A33;       /* NYSC deep green */
+  --accent-end: #2BB673;         /* NYSC bright green */
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply antialiased bg-primary text-primary;
+}
+
+.card {
+  @apply rounded-2xl border border-default bg-secondary backdrop-blur;
+}
+
+.dark {
+  /* NYSC Dark Palette */
+  --bg-primary: #0E1A12;         /* deep green‑black */
+  --bg-secondary: #102015;       /* dark card */
+  --sidebar-bg: #0B1A11;         /* dark sidebar */
+  --border-default: #1F3A25;     /* deep green border */
+  --text-primary: #E6F4EA;       /* soft light */
+  --text-secondary: #A8D1B3;     /* muted light green */
+  --accent-start: #0B7A33;       /* same brand gradient */
+  --accent-end: #2BB673;
+}
+
+@layer utilities {
+  .bg-primary { background-color: var(--bg-primary); }
+  .bg-secondary { background-color: var(--bg-secondary); }
+  .bg-sidebar { background-color: var(--sidebar-bg); }
+  .text-primary { color: var(--text-primary); }
+  .text-secondary { color: var(--text-secondary); }
+  .border-default { border-color: var(--border-default); }
+  .accent { background-image: linear-gradient(90deg, var(--accent-start), var(--accent-end)); color: #fff; }
+  .accent-text { background-image: linear-gradient(90deg, var(--accent-start), var(--accent-end)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .focus-ring { @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--accent-end)] focus-visible:ring-offset-[var(--bg-secondary)]; }
+  .elevated { @apply border-default bg-secondary; }
+}

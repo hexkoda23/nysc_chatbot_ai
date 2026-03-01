@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+langchain
+langchain-community
+langgraph
+langchain-openai
+python-dotenv
+docarray
+pypdf
+requests
+httpx
+serpapi
+

@@ -162,7 +162,7 @@ export default function WelcomePage() {
           className="absolute inset-0 bg-cover bg-center"
           style={{ backgroundImage: "url('/NYSC-ORIENTATION-CAMPS-IN-NIGERIA-1-1024x531.jpg')" }}
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-green-950 via-green-900/90 to-black/40" />
+        <div className="absolute inset-0 bg-gradient-to-r from-green-950 via-green-900/95 md:via-green-900/90 to-black/60 md:to-black/40" />
         <div className="relative z-10 max-w-7xl mx-auto px-6 w-full pt-8 md:pt-16">
           <div className="flex items-center gap-2 mb-3 animate-in fade-in slide-in-from-left duration-700">
             <div className="h-0.5 w-6 md:w-10 bg-green-500 rounded-full" />

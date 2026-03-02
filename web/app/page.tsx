@@ -128,19 +128,20 @@ export default function Page() {
           backgroundPosition: 'center 30%',
         }}
       >
-        <div className="absolute inset-0 bg-green-900/65" />
-        <div className="relative z-10 container flex items-center gap-6">
-          <Image
-            src="/NYSC-Nigeria-Logo.png"
-            alt="NYSC Logo"
-            width={80}
-            height={80}
-            className="rounded-full border-4 border-white/30 shadow-xl"
-          />
-          <div className="text-white">
-            <div className="text-2xl md:text-3xl font-extrabold tracking-wider">NATIONAL YOUTH SERVICE CORPS</div>
-            <div className="text-green-300 text-sm tracking-[0.3em] mt-1">• SERVICE AND HUMILITY •</div>
-            <div className="text-green-100 text-xs mt-2 max-w-lg opacity-80">AI-Powered Assistant for all NYSC-related queries</div>
+        <div className="absolute inset-0 bg-green-900/80 md:bg-green-900/65 transition-colors" />
+        <div className="relative z-10 container flex flex-col md:flex-row items-center gap-4 md:gap-6 px-6">
+          <div className="relative w-16 h-16 md:w-20 md:h-20 flex-shrink-0">
+            <Image
+              src="/NYSC-Nigeria-Logo.png"
+              alt="NYSC Logo"
+              fill
+              className="rounded-full border-2 md:border-4 border-white/30 shadow-xl object-contain bg-white/10"
+            />
+          </div>
+          <div className="text-center md:text-left text-white">
+            <div className="text-lg md:text-3xl font-black md:font-extrabold tracking-tight md:tracking-wider leading-tight">NATIONAL YOUTH SERVICE CORPS</div>
+            <div className="text-green-300 text-[10px] md:text-sm tracking-[0.2em] md:tracking-[0.3em] font-bold mt-1 uppercase">• Service and Humility •</div>
+            <div className="text-green-100 text-[10px] md:text-xs mt-2 max-w-lg opacity-80 font-medium">AI-Powered Assistant for all NYSC-related queries</div>
           </div>
         </div>
       </div>

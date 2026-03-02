@@ -131,6 +131,7 @@ const translations: Bundle = {
     auth_no_account: 'New to the platform?',
     auth_signup_link: 'Create Account',
     auth_error_pass_mismatch: 'Passwords do not match.',
+    coming_soon: 'Coming soon...',
   },
   yo: {
     brand: 'NYSC AI',
@@ -273,6 +274,7 @@ const translations: Bundle = {
     auth_no_account: 'Ṣé o jẹ́ tuntun sí ibí yìí?',
     auth_signup_link: 'Ṣẹ́dá àkọọlẹ̀',
     auth_error_pass_mismatch: 'Àwọn ọ̀rọ̀ aṣínà kò bára mu.',
+    coming_soon: 'Mbọ̀ laípẹ́...',
   },
   ha: {
     brand: 'NYSC AI',
@@ -415,6 +417,7 @@ const translations: Bundle = {
     auth_no_account: 'Sabon shiga ne?',
     auth_signup_link: 'Ƙirƙiri asusu',
     auth_error_pass_mismatch: 'Kalmomin sirri ba su dace ba.',
+    coming_soon: 'Yana nan tafe...',
   },
   ig: {
     brand: 'NYSC AI',
@@ -557,6 +560,7 @@ const translations: Bundle = {
     auth_no_account: 'Ị bụ onye ọhụrụ?',
     auth_signup_link: 'Mepụta akaụntụ',
     auth_error_pass_mismatch: 'Okwuntughe ndị ahụ adabaghị.',
+    coming_soon: 'Ọ na-abịa n\'oge adịghị anya...',
   },
 }
 

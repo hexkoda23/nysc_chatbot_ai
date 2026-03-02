@@ -9,6 +9,7 @@ export const LANGUAGE_TEMPLATES = {
         noAnswer: "I don't have specific information on that topic. Please visit the official NYSC website.",
         portal: "NYSC Portal",
         website: "NYSC Website",
+        coming_soon: "Coming soon...",
     },
 
     yo: {
@@ -21,6 +22,7 @@ export const LANGUAGE_TEMPLATES = {
         noAnswer: "Mi kò ní ìsọfúnni pàtó nípa kókó ìbéèrè yẹn. Jọwọ ṣèbẹ̀wò sí ojúewé NYSC.",
         portal: "Ojúewé NYSC",
         website: "Ìkànnì NYSC",
+        coming_soon: "Mbọ̀ laípẹ́...",
     },
 
     ig: {
@@ -33,6 +35,7 @@ export const LANGUAGE_TEMPLATES = {
         noAnswer: "Enweghị m ozi kpọmkwem maka isiokwu ahụ. Biko gaa webụsaịtị NYSC.",
         portal: "Ọdụ NYSC",
         website: "Webụsaịtị NYSC",
+        coming_soon: "Ọ na-abịa n'oge adịghị anya...",
     },
 
     ha: {
@@ -45,5 +48,6 @@ export const LANGUAGE_TEMPLATES = {
         noAnswer: "Ba ni da takamaiman bayani kan wannan batu. Don Allah ziyarci shafin NYSC.",
         portal: "Shafin NYSC",
         website: "Gidan yanar gizon NYSC",
+        coming_soon: "Yana nan tafe...",
     }
 };

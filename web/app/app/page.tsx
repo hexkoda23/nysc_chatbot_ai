@@ -522,6 +522,7 @@ export default function ChatApp() {
                 </div>
                 <div className="mt-4 flex items-center gap-2">
                   <button
+                    onClick={() => alert(t('coming_soon'))}
                     className="h-10 w-10 inline-flex items-center justify-center rounded-full border border-default bg-primary"
                     title={t('chat_voice_input')}
                   >

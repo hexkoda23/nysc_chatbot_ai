@@ -564,49 +564,34 @@ def _make_llm(timeout: float = 10.0, retries: int = 2, model_override: str | Non
     """
     from langchain_openai import ChatOpenAI
     groq_key = os.getenv("NYSC")
+    
+    # Use explicit override, then Groq model env, then OpenAI model env, then defaults
     if groq_key:
-        base = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-        # Prefer explicit override, else env, else a stable default
         model = model_override or os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-        cache_key = (timeout, retries, model_override)
-        if cache_key in _llm_cache:
-            return _llm_cache[cache_key]
-        try:
-        llm = ChatOpenAI(
-            api_key=groq_key,
-            base_url=base,
-            model=model,
-            temperature=0.1,
-            frequency_penalty=0.5, # Discourages repetition
-            max_tokens=1000,       # Prevents runaway generation
-            timeout=timeout,
-            max_retries=retries,
-        )
-    except TypeError:
-        os.environ["OPENAI_API_BASE"] = base
-        llm = ChatOpenAI(
-            api_key=groq_key,
-            model=model,
-            temperature=0.1,
-            frequency_penalty=0.5,
-            max_tokens=1000,
-            timeout=timeout,
-            max_retries=retries,
-        )
-    _llm_cache[cache_key] = llm
-    return llm
-# Default to OpenAI
-cache_key = (timeout, retries, model_override)
-if cache_key in _llm_cache:
-    return _llm_cache[cache_key]
-llm = ChatOpenAI(
-    model=model_override or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-    temperature=0.1,
-    frequency_penalty=0.5,
-    max_tokens=1000,
-    timeout=timeout,
-    max_retries=retries,
-)
+        base_url = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
+    else:
+        model = model_override or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        base_url = None # Use default OpenAI base
+
+    cache_key = (timeout, retries, model, base_url)
+    if cache_key in _llm_cache:
+        return _llm_cache[cache_key]
+
+    common_params = {
+        "model": model,
+        "temperature": 0.4,
+        "frequency_penalty": 0.8,
+        "presence_penalty": 0.3,
+        "max_tokens": 1000,
+        "timeout": timeout,
+        "max_retries": retries,
+    }
+
+    if groq_key:
+        common_params["api_key"] = groq_key
+        common_params["base_url"] = base_url
+    
+    llm = ChatOpenAI(**common_params)
     _llm_cache[cache_key] = llm
     return llm
 
@@ -664,9 +649,9 @@ def get_agent(target_lang: str = "en"):
         f"{lang_instruction}\n\n"
         "STRICT RULES:\n"
         "- Answer ONLY the Current Question. Do NOT summarize or repeat previous history.\n"
+        "- DO NOT repeat yourself or any word multiple times. If you see a loop, stop the sentence immediately.\n"
         f"- Write in professional, formal {lang_name}. Do NOT use informal slang like 'Omo', 'wàhálà', or 'koko' in Yorùbá.\n"
         "- Each point in a numbered list MUST provide NEW information. Do NOT repeat the same fact in different points.\n"
-        "- Avoid markdown asterisks and ALL CAPS.\n"
         "- Give SPECIFIC information: exact amounts, exact URLs, exact steps.\n"
         "- Current allowance is N77,000/month (effective March 2025).\n"
         "- Registration portal: https://portal.nysc.org.ng/nysc1/\n"
@@ -787,10 +772,11 @@ def _fast_rag_response(message: str, conversation_context: str = "", target_lang
         "STRICT RULES:\n"
         "1. Answer ONLY the User question at bottom. Do NOT summarize previous history.\n"
         "2. Use provided context. If not found, say: 'I don't have specific info. Visit `https://www.nysc.gov.ng`'.\n"
-        f"3. Write in formal, professional {lang_name}. No informal slang like 'Omo', 'wàhálà', or 'koko'.\n"
-        "4. Numbered details MUST be unique. Do NOT repeat the same information across bullets.\n"
-        "5. Structure: direct answer, unique numbered details, official source line.\n"
-        "6. No markdown asterisks, no ALL CAPS.\n"
+        "3. DO NOT repeat yourself. If a loop occurs, break it and move to the next part.\n"
+        f"4. Write in formal, professional {lang_name}. No informal slang like 'Omo', 'wàhálà', or 'koko'.\n"
+        "5. Numbered details MUST be unique. Do NOT repeat the same information across bullets.\n"
+        "6. Structure: direct answer, unique numbered details, official source line.\n"
+        "7. No markdown asterisks, no ALL CAPS.\n"
         f"7. After answer, write '{follow_up_txt}' with 2 unique relevant questions.\n"
         f"   {lang_instruction}\n"
         "8. End with:\n"

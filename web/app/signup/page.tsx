@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { isAuthed, signInOrUp } from '../../lib/auth'
+import { isAuthed, signInOrUp } from '@/lib/auth'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
 import { Globe, ChevronDown, User, Mail, Lock, ArrowRight } from 'lucide-react'

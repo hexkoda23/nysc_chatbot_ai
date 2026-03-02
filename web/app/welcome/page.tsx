@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getUser, isAuthed, signOut } from '../../lib/auth'
+import { getUser, isAuthed, signOut } from '@/lib/auth'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
 import {
@@ -89,28 +89,28 @@ export default function WelcomePage() {
   return (
     <main className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
-      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-green-800/90 backdrop-blur-md shadow-lg py-2' : 'bg-green-800 py-3'}`}>
+      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-green-800/95 backdrop-blur-md shadow-lg py-1.5' : 'bg-green-800 py-2.5'}`}>
         <div className="max-w-7xl mx-auto px-4 flex items-center justify-between">
           <div className="flex items-center gap-2 hover:opacity-90 transition-opacity cursor-pointer" onClick={() => router.push('/')}>
-            <div className="relative w-10 h-10">
+            <div className="relative w-8 h-8 md:w-10 md:h-10">
               <Image src="/NYSC-Nigeria-Logo.png" alt="NYSC Logo" fill className="rounded-full bg-white p-0.5" />
             </div>
             <div className="hidden xs:block text-white">
-              <div className="text-xs font-black tracking-tighter leading-none uppercase">National Youth</div>
-              <div className="text-[10px] font-bold text-green-300 uppercase">Service Corps</div>
+              <div className="text-[10px] md:text-xs font-black tracking-tighter leading-none uppercase">National Youth</div>
+              <div className="text-[8px] md:text-[10px] font-bold text-green-300 uppercase">Service Corps</div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 md:gap-4">
             {/* Language Selector */}
-            <div className="relative mr-1 md:mr-2">
+            <div className="relative">
               <button
                 onClick={() => setShowLang(!showLang)}
-                className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-full border border-white/10 transition-all text-xs font-bold"
+                className="flex items-center gap-1 bg-white/10 hover:bg-white/20 text-white px-2.5 py-1.5 rounded-full border border-white/10 transition-all text-[10px] md:text-xs font-bold"
               >
-                <Globe className="w-4 h-4" />
-                <span className="hidden sm:inline">{languages.find(l => l.code === lang)?.label}</span>
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${showLang ? 'rotate-180' : ''}`} />
+                <Globe className="w-3.5 h-3.5" />
+                <span className="hidden xs:inline">{languages.find(l => l.code === lang)?.label}</span>
+                <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${showLang ? 'rotate-180' : ''}`} />
               </button>
 
               {showLang && (
@@ -136,42 +136,43 @@ export default function WelcomePage() {
               )}
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-1.5 py-1 border border-white/10 shadow-inner">
-                <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-green-500 to-green-400 flex items-center justify-center text-white font-bold text-xs ring-2 ring-white/20 shadow-lg">
+            <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-sm rounded-full px-1.5 py-1 border border-white/10 shadow-inner">
+                <div className="h-6 w-6 md:h-7 md:w-7 rounded-full bg-gradient-to-tr from-green-500 to-green-400 flex items-center justify-center text-white font-bold text-[10px] md:text-xs ring-2 ring-white/20 shadow-lg">
                   {name[0]?.toUpperCase()}
                 </div>
-                <span className="hidden md:inline text-white text-[12px] font-black tracking-tight pr-2">{name}</span>
+                <span className="hidden md:inline text-white text-[11px] font-black tracking-tight pr-1">{name}</span>
               </div>
               <button
                 onClick={() => { signOut(); router.replace('/login') }}
-                className="group flex items-center gap-2 bg-white/5 hover:bg-red-500 text-white px-4 py-2 rounded-full transition-all duration-300 border border-white/10"
+                className="group flex items-center gap-1.5 bg-white/5 hover:bg-red-500 text-white px-2.5 py-1.5 rounded-full transition-all duration-300 border border-white/10"
                 title="Sign Out"
               >
-                <LogOut className="w-4 h-4 text-red-400 group-hover:text-white transition-colors" />
-                <span className="hidden sm:inline text-[11px] font-black uppercase tracking-widest">Sign Out</span>
+                <LogOut className="w-3.5 h-3.5 text-red-400 group-hover:text-white transition-colors" />
+                <span className="hidden xs:inline text-[9px] font-black uppercase tracking-widest">Exit</span>
               </button>
             </div>
           </div>
         </div>
       </header>
+      <div className="h-12 md:h-14" /> {/* Spacer */}
 
       {/* Hero Banner with Glassmorphism Overlay */}
-      <div className="relative h-72 md:h-[400px] flex items-center overflow-hidden">
+      <div className="relative h-[300px] md:h-[400px] flex items-center overflow-hidden">
         <div
           className="absolute inset-0 bg-cover bg-center"
           style={{ backgroundImage: "url('/NYSC-ORIENTATION-CAMPS-IN-NIGERIA-1-1024x531.jpg')" }}
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-green-950 via-green-900/80 to-green-900/20" />
-        <div className="relative z-10 max-w-7xl mx-auto px-6 w-full pt-16">
-          <div className="flex items-center gap-2 mb-4 animate-in fade-in slide-in-from-left duration-700">
-            <div className="h-1 w-10 bg-green-500 rounded-full" />
-            <p className="text-green-400 text-[11px] font-black tracking-[0.4em] uppercase shadow-sm">Official AI Guide</p>
+        <div className="absolute inset-0 bg-gradient-to-r from-green-950 via-green-900/90 to-black/40" />
+        <div className="relative z-10 max-w-7xl mx-auto px-6 w-full pt-8 md:pt-16">
+          <div className="flex items-center gap-2 mb-3 animate-in fade-in slide-in-from-left duration-700">
+            <div className="h-0.5 w-6 md:w-10 bg-green-500 rounded-full" />
+            <p className="text-green-400 text-[9px] md:text-[11px] font-black tracking-[0.3em] md:tracking-[0.4em] uppercase shadow-sm">Official AI Guide</p>
           </div>
-          <h1 className="text-4xl md:text-6xl font-black text-white leading-tight tracking-tighter drop-shadow-xl animate-in fade-in slide-in-from-left duration-700 delay-100">
+          <h1 className="text-3xl md:text-6xl font-black text-white leading-[1.1] tracking-tighter drop-shadow-xl animate-in fade-in slide-in-from-left duration-700 delay-100">
             {t('welcome_hello').replace('{name}', name)}!
           </h1>
-          <p className="text-green-50/90 mt-6 text-sm md:text-lg max-w-2xl font-medium leading-relaxed drop-shadow-lg animate-in fade-in slide-in-from-left duration-700 delay-200">
+          <p className="text-green-50/90 mt-4 md:mt-6 text-xs md:text-lg max-w-2xl font-medium leading-relaxed drop-shadow-lg animate-in fade-in slide-in-from-left duration-700 delay-200">
             Your instant, smart companion for all NYSC inquiries. From allowances to postings, we speak your language and have the answers.
           </p>
           <div className="mt-10 flex flex-wrap gap-5 animate-in fade-in slide-in-from-bottom duration-1000 delay-300">

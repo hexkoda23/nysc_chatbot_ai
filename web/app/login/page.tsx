@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { isAuthed, signInOrUp } from '../../lib/auth'
+import { isAuthed, signInOrUp } from '@/lib/auth'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
 import { Globe, ChevronDown, Mail, Lock, LogIn, ArrowRight } from 'lucide-react'
@@ -48,18 +48,18 @@ export default function LoginPage() {
     >
       {/* Background Image with Overlay */}
       <div
-        className="absolute inset-0 bg-cover bg-center opacity-40 scale-105"
+        className="absolute inset-0 bg-cover bg-center opacity-40 scale-110"
         style={{ backgroundImage: "url('/NYSC.jpg')" }}
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-green-950/80 via-green-900/40 to-green-950" />
+      <div className="absolute inset-0 bg-gradient-to-b from-green-950/90 via-green-900/60 to-green-950" />
 
       {/* Header */}
-      <header className="relative z-20 w-full px-6 py-6 flex items-center justify-between max-w-7xl">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => router.push('/')}>
-          <Image src="/NYSC-Nigeria-Logo.png" alt="NYSC Logo" width={48} height={48} className="rounded-full bg-white p-0.5 shadow-xl" />
-          <div className="hidden sm:block text-white">
-            <div className="text-xs font-black tracking-tighter leading-none uppercase">National Youth</div>
-            <div className="text-[10px] font-bold text-green-400 uppercase">Service Corps</div>
+      <header className="relative z-20 w-full px-4 md:px-6 py-4 md:py-6 flex items-center justify-between max-w-7xl">
+        <div className="flex items-center gap-2 md:gap-3 cursor-pointer" onClick={() => router.push('/')}>
+          <Image src="/NYSC-Nigeria-Logo.png" alt="NYSC Logo" width={36} height={36} className="md:w-12 md:h-12 rounded-full bg-white p-0.5 shadow-xl" />
+          <div className="hidden xs:block text-white">
+            <div className="text-[10px] md:text-xs font-black tracking-tighter leading-none uppercase">National Youth</div>
+            <div className="text-[8px] md:text-[10px] font-bold text-green-400 uppercase">Service Corps</div>
           </div>
         </div>
 
@@ -97,18 +97,18 @@ export default function LoginPage() {
       </header>
 
       {/* Login Form Container */}
-      <div className="relative z-10 w-full max-w-md mx-auto px-6 flex-1 flex flex-col justify-center pb-20">
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-black text-white tracking-tight mb-2">Welcome Back</h1>
-          <p className="text-green-200/70 text-sm font-medium">Access your intelligent NYSC assistant.</p>
+      <div className="relative z-10 w-full max-w-md mx-auto px-4 md:px-6 flex-1 flex flex-col justify-center pb-12 md:pb-20">
+        <div className="text-center mb-6 md:mb-10">
+          <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-1 md:mb-2">Welcome Back</h1>
+          <p className="text-green-200/70 text-[12px] md:text-sm font-medium">Access your intelligent NYSC assistant.</p>
         </div>
 
-        <div className="bg-white rounded-[32px] shadow-2xl overflow-hidden border border-white/20">
-          <div className="bg-green-600 px-8 py-4 text-white text-[10px] font-black uppercase tracking-[0.2em] text-center">
+        <div className="bg-white rounded-3xl md:rounded-[32px] shadow-2xl overflow-hidden border border-white/20">
+          <div className="bg-green-600 px-6 md:px-8 py-3 md:py-4 text-white text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] text-center">
             Secured Access Portal
           </div>
 
-          <form onSubmit={onSubmit} className="p-8 space-y-6">
+          <form onSubmit={onSubmit} className="p-6 md:p-8 space-y-5 md:space-y-6">
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Email Address</label>
               <div className="relative">

@@ -22,13 +22,6 @@ const isGreeting = (t: string) => {
   return ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening'].some(g => s === g || s.startsWith(g + ' '))
 }
 
-const SUGGESTIONS = [
-  { label: 'Allowance details', sub: 'N77,000/month since March 2025' },
-  { label: 'Redeployment steps', sub: 'Valid reasons and process' },
-  { label: 'Call-up letter help', sub: 'How to print and timelines' },
-  { label: 'PPA posting info', sub: 'Understanding your posting rights' },
-]
-
 const LANGUAGES = [
   { code: 'auto', label: 'Auto' },
   { code: 'en', label: 'English' },
@@ -38,6 +31,15 @@ const LANGUAGES = [
 ]
 
 export default function ChatApp() {
+  const { t, setLang, lang: uiLang } = useI18n()
+
+  const SUGGESTIONS = [
+    { label: t('chat_suggest_allowance'), sub: t('chat_suggest_allowance_sub') },
+    { label: t('chat_suggest_redeploy'), sub: t('chat_suggest_redeploy_sub') },
+    { label: t('chat_suggest_callup'), sub: t('chat_suggest_callup_sub') },
+    { label: t('chat_suggest_policy'), sub: t('chat_suggest_policy_sub') },
+  ]
+
   const router = useRouter()
   const [chats, setChats] = useState<Chat[]>([])
   const [currentId, setCurrentId] = useState<string>('')
@@ -51,7 +53,6 @@ export default function ChatApp() {
   const [showLangDropdown, setShowLangDropdown] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { t, lang: uiLang, setLang } = useI18n()
   const [selectedLang, setSelectedLang] = useState<'auto' | 'en' | 'yo' | 'ig' | 'ha'>('auto')
   const sessionIdRef = useRef<string>(undefined)
   if (!sessionIdRef.current) sessionIdRef.current = generateSessionId()
@@ -402,8 +403,8 @@ export default function ChatApp() {
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center py-12 animate-in fade-in duration-500">
               <Image src="/NYSC-Nigeria-Logo.png" alt="NYSC" width={80} height={80} className="rounded-full opacity-20 mb-6" />
-              <h2 className="font-display text-3xl md:text-4xl text-primary mb-2">What can I help you with today?</h2>
-              <p className="text-sm text-secondary mb-10 max-w-xs">Policy-grounded answers in English, Yorùbá, Hausa, and Igbo — instantly.</p>
+              <h2 className="font-display text-3xl md:text-4xl text-primary mb-2">{t('chat_assist_title')}</h2>
+              <p className="text-sm text-secondary mb-10 max-w-xs">{t('hero_subtitle').substring(0, 75)}...</p>
               <div className="flex flex-wrap gap-3 justify-center max-w-lg">
                 {SUGGESTIONS.map(s => (
                   <button

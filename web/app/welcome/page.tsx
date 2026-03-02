@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getUser, isAuthed, signOut } from '@/lib/auth'
+import { getUser, isAuthed, signOut } from '../../lib/auth'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
 import {
@@ -35,10 +35,10 @@ export default function WelcomePage() {
   }, [router])
 
   const languages = [
-    { code: 'en', label: 'English', flag: '🇬🇧' },
-    { code: 'yo', label: 'Yorùbá', flag: '🇳🇬' },
-    { code: 'ha', label: 'Hausa', flag: '🇳🇬' },
-    { code: 'ig', label: 'Igbo', flag: '🇳🇬' },
+    { code: 'en', label: 'English' },
+    { code: 'yo', label: 'Yorùbá' },
+    { code: 'ha', label: 'Hausa' },
+    { code: 'ig', label: 'Igbo' },
   ]
 
   const cards = [
@@ -125,7 +125,6 @@ export default function WelcomePage() {
                         className={`w-full flex items-center justify-between px-4 py-3 text-xs transition-colors ${lang === l.code ? 'bg-green-50 text-green-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
                       >
                         <span className="flex items-center gap-3">
-                          <span className="text-lg leading-none">{l.flag}</span>
                           {l.label}
                         </span>
                         {lang === l.code && <div className="w-2 h-2 rounded-full bg-green-600 shadow-sm" />}
@@ -169,30 +168,33 @@ export default function WelcomePage() {
             <div className="h-0.5 w-6 md:w-10 bg-green-500 rounded-full" />
             <p className="text-green-400 text-[9px] md:text-[11px] font-black tracking-[0.3em] md:tracking-[0.4em] uppercase shadow-sm">Official AI Guide</p>
           </div>
-          <h1 className="text-3xl md:text-6xl font-black text-white leading-[1.1] tracking-tighter drop-shadow-xl animate-in fade-in slide-in-from-left duration-700 delay-100">
+          <h1 className="text-4xl md:text-6xl font-black text-white leading-[1.1] tracking-tighter drop-shadow-xl animate-in fade-in slide-in-from-left duration-700 delay-100 mb-2">
             {t('welcome_hello').replace('{name}', name)}!
           </h1>
-          <p className="text-green-50/90 mt-4 md:mt-6 text-xs md:text-lg max-w-2xl font-medium leading-relaxed drop-shadow-lg animate-in fade-in slide-in-from-left duration-700 delay-200">
+          <p className="text-green-50/90 mt-2 md:mt-6 text-sm md:text-lg max-w-2xl font-medium leading-relaxed drop-shadow-lg animate-in fade-in slide-in-from-left duration-700 delay-200">
             Your instant, smart companion for all NYSC inquiries. From allowances to postings, we speak your language and have the answers.
           </p>
-          <div className="mt-10 flex flex-wrap gap-5 animate-in fade-in slide-in-from-bottom duration-1000 delay-300">
+          <div className="mt-8 md:mt-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-4 md:gap-5 animate-in fade-in slide-in-from-bottom duration-1000 delay-300">
             <a
               href="/app"
-              className="group flex items-center gap-3 bg-white text-green-900 font-extrabold text-sm uppercase tracking-widest px-8 py-4 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.3)] hover:shadow-green-500/40 hover:bg-green-50 hover:scale-105 transition-all duration-300"
+              className="group flex items-center justify-center gap-3 bg-white text-green-900 font-extrabold text-sm uppercase tracking-widest px-8 py-4 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] hover:shadow-green-500/40 hover:bg-green-50 hover:scale-105 transition-all duration-300"
             >
               <MessageSquare className="w-5 h-5 text-green-600 transition-transform group-hover:rotate-12" />
               {t('get_started') || 'Launch Assistant'}
             </a>
-            <button className="hidden sm:flex items-center gap-2 bg-white/10 backdrop-blur-md text-white border border-white/20 font-black text-xs uppercase tracking-widest px-8 py-4 rounded-full hover:bg-white/20 hover:scale-105 transition-all duration-300">
+            <a
+              href="/how-it-works"
+              className="flex items-center justify-center gap-2 bg-white/10 backdrop-blur-md text-white border border-white/20 font-black text-xs uppercase tracking-widest px-8 py-4 rounded-2xl hover:bg-white/20 hover:scale-105 transition-all duration-300"
+            >
               How it works
-            </button>
+            </a>
           </div>
         </div>
       </div>
 
       {/* Topics Grid */}
-      <section className="flex-1 max-w-7xl mx-auto px-4 -mt-12 md:-mt-16 relative z-20 pb-20 w-full">
-        <div className="bg-white/70 backdrop-blur-2xl rounded-[40px] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] border border-white/50 p-8 md:p-12">
+      <section className="flex-1 max-w-7xl mx-auto px-4 -mt-8 md:-mt-16 relative z-20 pb-20 w-full">
+        <div className="bg-white/80 md:bg-white/70 backdrop-blur-2xl rounded-[32px] md:rounded-[40px] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] border border-white/50 p-6 md:p-12">
           <div className="flex items-end justify-between mb-12">
             <div>
               <h2 className="text-gray-900 font-black text-3xl tracking-tight leading-none">{t('welcome_help')}</h2>
@@ -261,9 +263,9 @@ export default function WelcomePage() {
             </div>
           </div>
 
-          <div className="flex gap-4">
-            <a href="https://www.nysc.gov.ng" target="_blank" rel="noopener noreferrer" className="p-3 bg-gray-50 rounded-full hover:bg-green-50 transition-colors border border-gray-100 uppercase text-[9px] font-black tracking-widest text-gray-600 hover:text-green-700">Official Site</a>
-            <a href="https://portal.nysc.org.ng" target="_blank" rel="noopener noreferrer" className="p-3 bg-gray-50 rounded-full hover:bg-green-50 transition-colors border border-gray-100 uppercase text-[9px] font-black tracking-widest text-gray-600 hover:text-green-700">NYSC Portal</a>
+          <div className="flex flex-wrap justify-center gap-3 md:gap-4">
+            <a href="https://www.nysc.gov.ng" target="_blank" rel="noopener noreferrer" className="p-3 bg-gray-50 rounded-xl hover:bg-green-50 transition-colors border border-gray-100 uppercase text-[9px] font-black tracking-widest text-gray-600 hover:text-green-700">Official Site</a>
+            <a href="https://portal.nysc.org.ng" target="_blank" rel="noopener noreferrer" className="p-3 bg-gray-50 rounded-xl hover:bg-green-50 transition-colors border border-gray-100 uppercase text-[9px] font-black tracking-widest text-gray-600 hover:text-green-700">NYSC Portal</a>
           </div>
         </div>
       </div>
@@ -286,17 +288,25 @@ export default function WelcomePage() {
               <div>
                 <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-green-500 mb-6 underline underline-offset-8 decoration-2 decoration-green-500/30">Connect</h4>
                 <ul className="space-y-4 text-xs font-bold text-green-100/80">
-                  <li><a href="#" className="hover:text-white transition-colors">Instagram</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">X (Twitter)</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">LinkedIn</a></li>
+                  <li><a href="/instagram" className="hover:text-white transition-colors">Instagram</a></li>
+                  <li><a href="/twitter" className="hover:text-white transition-colors">X (Twitter)</a></li>
+                  <li><a href="/linkedin" className="hover:text-white transition-colors">LinkedIn</a></li>
                 </ul>
               </div>
               <div>
                 <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-green-500 mb-6 underline underline-offset-8 decoration-2 decoration-green-500/30">Resources</h4>
                 <ul className="space-y-4 text-xs font-bold text-green-100/80">
                   <li><a href="/app" className="hover:text-white transition-colors">Chat Assistant</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">Policy Docs</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">Camp Safety</a></li>
+                  <li><a href="/policy" className="hover:text-white transition-colors">Policy Docs</a></li>
+                  <li><a href="/safety" className="hover:text-white transition-colors">Camp Safety</a></li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-green-500 mb-6 underline underline-offset-8 decoration-2 decoration-green-500/30">Legal</h4>
+                <ul className="space-y-4 text-xs font-bold text-green-100/80">
+                  <li><a href="/privacy" className="hover:text-white transition-colors">Privacy</a></li>
+                  <li><a href="/terms" className="hover:text-white transition-colors">Terms</a></li>
+                  <li><a href="/support" className="hover:text-white transition-colors">Support</a></li>
                 </ul>
               </div>
             </div>
@@ -305,9 +315,9 @@ export default function WelcomePage() {
           <div className="pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-[10px] font-black uppercase tracking-widest text-green-100/40">
             <div>© 2026 National Youth Service Corps. Service and Humility.</div>
             <div className="flex gap-8">
-              <a href="#" className="hover:text-white transition-colors">Privacy</a>
-              <a href="#" className="hover:text-white transition-colors">Terms</a>
-              <a href="#" className="hover:text-white transition-colors">Support</a>
+              <a href="/privacy" className="hover:text-white transition-colors">Privacy</a>
+              <a href="/terms" className="hover:text-white transition-colors">Terms</a>
+              <a href="/support" className="hover:text-white transition-colors">Support</a>
             </div>
           </div>
         </div>

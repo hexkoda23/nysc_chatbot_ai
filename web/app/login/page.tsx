@@ -4,12 +4,13 @@ import { useRouter } from 'next/navigation'
 import { isAuthed, signInOrUp } from '@/lib/auth'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
-import { Globe, ChevronDown, Mail, Lock, LogIn, ArrowRight } from 'lucide-react'
+import { Globe, ChevronDown, Mail, Lock, LogIn, ArrowRight, Eye, EyeOff } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showLang, setShowLang] = useState(false)
@@ -20,10 +21,10 @@ export default function LoginPage() {
   }, [router])
 
   const languages = [
-    { code: 'en', label: 'English', flag: '🇬🇧' },
-    { code: 'yo', label: 'Yorùbá', flag: '🇳🇬' },
-    { code: 'ha', label: 'Hausa', flag: '🇳🇬' },
-    { code: 'ig', label: 'Igbo', flag: '🇳🇬' },
+    { code: 'en', label: 'English' },
+    { code: 'yo', label: 'Yorùbá' },
+    { code: 'ha', label: 'Hausa' },
+    { code: 'ig', label: 'Igbo' },
   ]
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -84,10 +85,7 @@ export default function LoginPage() {
                     onClick={() => { setLang(l.code as any); setShowLang(false) }}
                     className={`w-full flex items-center justify-between px-4 py-3 text-xs transition-colors ${lang === l.code ? 'bg-green-50 text-green-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
                   >
-                    <span className="flex items-center gap-3">
-                      <span className="text-lg">{l.flag}</span>
-                      {l.label}
-                    </span>
+                    <span>{l.label}</span>
                   </button>
                 ))}
               </div>
@@ -99,7 +97,7 @@ export default function LoginPage() {
       {/* Login Form Container */}
       <div className="relative z-10 w-full max-w-md mx-auto px-4 md:px-6 flex-1 flex flex-col justify-center pb-12 md:pb-20">
         <div className="text-center mb-6 md:mb-10">
-          <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-1 md:mb-2">Welcome Back</h1>
+          <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-1 md:mb-2">{t('auth_login_title')}</h1>
           <p className="text-green-200/70 text-[12px] md:text-sm font-medium">Access your intelligent NYSC assistant.</p>
         </div>
 
@@ -110,7 +108,7 @@ export default function LoginPage() {
 
           <form onSubmit={onSubmit} className="p-6 md:p-8 space-y-5 md:space-y-6">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Email Address</label>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">{t('auth_email_label')}</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -125,17 +123,24 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Password</label>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">{t('auth_password_label')}</label>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full bg-gray-50 border-0 rounded-2xl px-11 py-4 text-sm font-bold focus:ring-2 focus:ring-green-500 transition-all placeholder:text-gray-300 shadow-inner"
+                  className="w-full bg-gray-50 border-0 rounded-2xl px-11 py-4 text-sm font-bold focus:ring-2 focus:ring-green-500 transition-all placeholder:text-gray-300 shadow-inner pr-12"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-green-600 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
@@ -147,13 +152,13 @@ export default function LoginPage() {
               className="group w-full bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase tracking-[0.2em] py-4 rounded-2xl shadow-xl shadow-green-900/20 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
             >
               <LogIn className="w-4 h-4 group-hover:scale-110 transition-transform" />
-              {loading ? 'Authenticating...' : 'Sign In Now'}
+              {loading ? 'Authenticating...' : t('auth_login_submit')}
             </button>
 
             <div className="text-center pt-4 space-y-3">
               <p className="text-xs font-bold text-gray-400">
-                New to the platform?{' '}
-                <a href="/signup" className="text-green-700 hover:text-green-600 transition-colors border-b-2 border-green-700/20">Create Account</a>
+                {t('auth_no_account')}{' '}
+                <a href="/signup" className="text-green-700 hover:text-green-600 transition-colors border-b-2 border-green-700/20">{t('auth_signup_link')}</a>
               </p>
               <a href="#" className="block text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-green-600 transition-colors">
                 Forgot your credentials?

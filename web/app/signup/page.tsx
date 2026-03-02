@@ -4,13 +4,16 @@ import { useRouter } from 'next/navigation'
 import { isAuthed, signInOrUp } from '@/lib/auth'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
-import { Globe, ChevronDown, User, Mail, Lock, ArrowRight } from 'lucide-react'
+import { Globe, ChevronDown, User, Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react'
 
 export default function SignupPage() {
   const router = useRouter()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showLang, setShowLang] = useState(false)
@@ -21,15 +24,21 @@ export default function SignupPage() {
   }, [router])
 
   const languages = [
-    { code: 'en', label: 'English', flag: '🇬🇧' },
-    { code: 'yo', label: 'Yorùbá', flag: '🇳🇬' },
-    { code: 'ha', label: 'Hausa', flag: '🇳🇬' },
-    { code: 'ig', label: 'Igbo', flag: '🇳🇬' },
+    { code: 'en', label: 'English' },
+    { code: 'yo', label: 'Yorùbá' },
+    { code: 'ha', label: 'Hausa' },
+    { code: 'ig', label: 'Igbo' },
   ]
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    if (password !== confirmPassword) {
+      setError(t('auth_error_pass_mismatch'))
+      return
+    }
+
     setLoading(true)
     try {
       if (!name || !email || !password) throw new Error('Please fill in all fields.')
@@ -84,10 +93,7 @@ export default function SignupPage() {
                     onClick={() => { setLang(l.code as any); setShowLang(false) }}
                     className={`w-full flex items-center justify-between px-4 py-3 text-xs transition-colors ${lang === l.code ? 'bg-green-50 text-green-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
                   >
-                    <span className="flex items-center gap-3">
-                      <span className="text-lg">{l.flag}</span>
-                      {l.label}
-                    </span>
+                    <span>{l.label}</span>
                   </button>
                 ))}
               </div>
@@ -99,7 +105,7 @@ export default function SignupPage() {
       {/* Signup Form Container */}
       <div className="relative z-10 w-full max-w-md mx-auto px-6 flex-1 flex flex-col justify-center pb-20">
         <div className="text-center mb-10">
-          <h1 className="text-4xl font-black text-white tracking-tight mb-2">Create Account</h1>
+          <h1 className="text-4xl font-black text-white tracking-tight mb-2">{t('auth_signup_title')}</h1>
           <p className="text-green-200/70 text-sm font-medium">Join the intelligent community of Corps Members.</p>
         </div>
 
@@ -110,7 +116,7 @@ export default function SignupPage() {
 
           <form onSubmit={onSubmit} className="p-8 space-y-5">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Full Name</label>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">{t('auth_name_label')}</label>
               <div className="relative">
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -125,7 +131,7 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Email Address</label>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">{t('auth_email_label')}</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -140,17 +146,46 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Secure Password</label>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">{t('auth_password_label')}</label>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full bg-gray-50 border-0 rounded-2xl px-11 py-3.5 text-sm font-bold focus:ring-2 focus:ring-green-500 transition-all placeholder:text-gray-300 shadow-inner"
+                  className="w-full bg-gray-50 border-0 rounded-2xl px-11 py-3.5 text-sm font-bold focus:ring-2 focus:ring-green-500 transition-all placeholder:text-gray-300 shadow-inner pr-12"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-green-600 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">{t('auth_confirm_password_label')}</label>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full bg-gray-50 border-0 rounded-2xl px-11 py-3.5 text-sm font-bold focus:ring-2 focus:ring-green-500 transition-all placeholder:text-gray-300 shadow-inner pr-12"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-green-600 transition-colors"
+                >
+                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
@@ -163,7 +198,7 @@ export default function SignupPage() {
             >
               {loading ? 'Processing...' : (
                 <>
-                  Register & Continue
+                  {t('auth_signup_submit')}
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </>
               )}
@@ -171,8 +206,8 @@ export default function SignupPage() {
 
             <div className="text-center pt-4">
               <p className="text-xs font-bold text-gray-400">
-                Already part of the corps?{' '}
-                <a href="/login" className="text-green-700 hover:text-green-600 transition-colors border-b-2 border-green-700/20">Login Here</a>
+                {t('auth_have_account')}{' '}
+                <a href="/login" className="text-green-700 hover:text-green-600 transition-colors border-b-2 border-green-700/20">{t('auth_login_link')}</a>
               </p>
             </div>
           </form>

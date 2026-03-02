@@ -1,10 +1,12 @@
 "use client"
 import { useEffect, useRef, useState } from 'react'
-import { getUser, isAuthed, signOut } from '@/lib/auth'
+import { getUser, isAuthed, signOut } from '../../lib/auth'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Mic, Send, Plus, LogOut, Settings, Search } from 'lucide-react'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
+import { sendMessage, reloadCorpus, translateTexts } from '../../lib/api'
+import { generateSessionId } from '../../lib/utils'
 
 type Source = { source: string; snippet: string }
 type Msg = { id: string; role: 'user' | 'assistant'; content: string; sources?: Source[]; langName?: string; langCode?: string }
@@ -32,8 +34,8 @@ export default function ChatApp() {
   // - "auto" => backend detects from the question and answers in that language
   // - explicit code => force backend to answer in that language
   const [selectedLang, setSelectedLang] = useState<'auto' | 'en' | 'yo' | 'ig' | 'ha'>('auto')
-  const sessionIdRef = useRef<string>()
-  if (!sessionIdRef.current) sessionIdRef.current = crypto.randomUUID()
+  const sessionIdRef = useRef<string>(undefined)
+  if (!sessionIdRef.current) sessionIdRef.current = generateSessionId()
   // Anonymous user question limit
   const ANON_LIMIT = 5
   const [anonQuestionCount, setAnonQuestionCount] = useState(0)
@@ -58,11 +60,6 @@ export default function ChatApp() {
       return <span key={i}>{p}</span>
     })
   }
-
-  const API_BASE =
-    (typeof process !== 'undefined' &&
-      (process.env.NEXT_PUBLIC_API_BASE as string)) ||
-    'http://127.0.0.1:8000'
 
   const filteredChats = query
     ? chats.filter(c => c.title.toLowerCase().includes(query.toLowerCase()))
@@ -109,7 +106,7 @@ export default function ChatApp() {
   }
 
   const newChat = () => {
-    const id = crypto.randomUUID()
+    const id = generateSessionId()
     const chat: Chat = { id, title: 'New chat', msgs: [], langCode: uiLang }
     persist([chat, ...chats])
     setCurrentId(id)
@@ -118,7 +115,7 @@ export default function ChatApp() {
   const ensureCurrent = (): Chat => {
     const c = chats.find(x => x.id === currentId)
     if (c) return c
-    const id = crypto.randomUUID()
+    const id = generateSessionId()
     const chat: Chat = { id, title: 'New chat', msgs: [], langCode: uiLang }
     const next = [chat, ...chats]
     setCurrentId(id)
@@ -152,15 +149,7 @@ export default function ChatApp() {
           if (c.msgs.length > 0 && c.langCode !== uiLang) {
             try {
               const textsToTranslate = c.msgs.map(m => m.content)
-              const res = await fetch(`${API_BASE}/api/translate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  texts: textsToTranslate,
-                  target_lang: uiLang
-                }),
-              })
-              const data = await res.json()
+              const data = await translateTexts(uiLang, textsToTranslate)
               if (data.translations && data.translations.length === textsToTranslate.length) {
                 changed = true
                 return {
@@ -225,11 +214,7 @@ export default function ChatApp() {
 
   // Ensure backend picks up any new documents by reloading corpus once
   useEffect(() => {
-    const base =
-      (typeof process !== 'undefined' &&
-        (process.env.NEXT_PUBLIC_API_BASE as string)) ||
-      'http://127.0.0.1:8000'
-    fetch(`${base}/api/reload`, { method: 'POST' }).catch(() => { })
+    reloadCorpus()
     // fire-and-forget; safe in dev, idempotent on server
   }, [])
 
@@ -285,7 +270,7 @@ export default function ChatApp() {
     const target = ensureCurrent()
     const targetId = target.id
     const text = input.trim()
-    const userMsg: Msg = { id: crypto.randomUUID(), role: 'user', content: text, langCode: uiLang }
+    const userMsg: Msg = { id: generateSessionId(), role: 'user', content: text, langCode: uiLang }
     appendMsg(userMsg, targetId)
     setInput('')
 
@@ -297,7 +282,7 @@ export default function ChatApp() {
     // Greeting: respond politely immediately
     if (isGreeting(text)) {
       const ai: Msg = {
-        id: crypto.randomUUID(),
+        id: generateSessionId(),
         role: 'assistant',
         content: t('chat_greeting'),
         langCode: uiLang
@@ -308,25 +293,19 @@ export default function ChatApp() {
 
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionIdRef.current,
-          message: text,
-          selectedLang: selectedLang === 'auto' ? null : selectedLang,
-          language: selectedLang,
-        }),
+      const data = await sendMessage({
+        session_id: sessionIdRef.current!,
+        message: text,
+        selectedLang: selectedLang === 'auto' ? '' : selectedLang,
       })
-      const data = await res.json()
-      const aiId = crypto.randomUUID()
+      const aiId = generateSessionId()
       const ai: Msg = { id: aiId, role: 'assistant', content: '', langName: data.detected_language_name, langCode: uiLang }
       appendMsg(ai, targetId)
       typeOut(String(data.answer || ''), targetId, aiId, data.sources || [])
       return
     } catch (e) {
       const ai: Msg = {
-        id: crypto.randomUUID(),
+        id: generateSessionId(),
         role: 'assistant',
         content:
           'Unable to reach the NYSC assistant. Ensure the backend is running at 127.0.0.1:8000 and CORS allows http://localhost:5180.',

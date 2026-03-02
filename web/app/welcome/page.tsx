@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getUser, isAuthed, signOut } from '@/lib/auth'
+import { getUser, isAuthed, signOut } from '../../lib/auth'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
 

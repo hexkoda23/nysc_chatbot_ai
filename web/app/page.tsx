@@ -7,11 +7,11 @@ import { motion } from 'framer-motion'
 import { GetStartedButton } from '@/components/get-started'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
+import { translateTexts } from '../lib/api'
 
 export default function Page() {
   const { t, setLang, lang } = useI18n()
   const [selectedLang, setSelectedLang] = useState<'en' | 'yo' | 'ig' | 'ha'>(lang)
-  const API_BASE = (typeof process !== 'undefined' && (process.env.NEXT_PUBLIC_API_BASE as string)) || 'http://127.0.0.1:8000'
   const [heroTitle, setHeroTitle] = useState('AI That Understands NYSC.')
   const [heroSubtitle, setHeroSubtitle] = useState('Get instant, accurate answers on call-up letters, PPA postings, allowances, mobilization, and official policies.')
   const [features, setFeatures] = useState<[string, string][]>([
@@ -60,12 +60,7 @@ export default function Page() {
       ...securityItems.flat(), ...testimonials.map(([, q]) => q),
       ...faq.flat(),
     ]
-    const res = await fetch(`${API_BASE}/api/translate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target_lang: lang, texts }),
-    })
-    const data = await res.json()
+    const data = await translateTexts(lang, texts)
     const t = Array.isArray(data?.translations) ? (data.translations as string[]) : []
     const need =
       2 +                      // heroTitle, heroSubtitle

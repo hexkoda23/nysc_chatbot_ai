@@ -2,17 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+
 :root {
   --radius: 1rem;
-  /* NYSC Light Palette */
-  --bg-primary: #F5FAF7;         /* soft off‑white with green tint */
-  --bg-secondary: #FFFFFF;       /* cards */
-  --sidebar-bg: #E8F3EA;         /* light sidebar */
-  --border-default: #D5E5D8;     /* subtle greenish border */
-  --text-primary: #0F2416;       /* charcoal with green hue */
-  --text-secondary: #3F6848;     /* muted green‑gray */
-  --accent-start: #0B7A33;       /* NYSC deep green */
-  --accent-end: #2BB673;         /* NYSC bright green */
+  /* NYSC Light Palette — "Official Intelligence" */
+  --bg-primary: #F4F9F5;
+  --bg-secondary: #FFFFFF;
+  --sidebar-bg: #EAF3EC;
+  --border-default: #C9E0CE;
+  --text-primary: #0D1F14;
+  --text-secondary: #3A5E44;
+  --accent-start: #0B7A33;
+  --accent-end: #22C55E;
+  --accent-gold: #D4A017;
+  --surface-elevated: #FAFFFE;
 }
 
 html {
@@ -20,34 +24,127 @@ html {
 }
 
 body {
-  @apply antialiased bg-primary text-primary;
-}
-
-.card {
-  @apply rounded-2xl border border-default bg-secondary backdrop-blur;
+  @apply antialiased;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'DM Sans', system-ui, sans-serif;
 }
 
 .dark {
-  /* NYSC Dark Palette */
-  --bg-primary: #0E1A12;         /* deep green‑black */
-  --bg-secondary: #102015;       /* dark card */
-  --sidebar-bg: #0B1A11;         /* dark sidebar */
-  --border-default: #1F3A25;     /* deep green border */
-  --text-primary: #E6F4EA;       /* soft light */
-  --text-secondary: #A8D1B3;     /* muted light green */
-  --accent-start: #0B7A33;       /* same brand gradient */
-  --accent-end: #2BB673;
+  --bg-primary: #080F0A;
+  --bg-secondary: #0D1A10;
+  --sidebar-bg: #091510;
+  --border-default: #152B1C;
+  --text-primary: #DFF0E4;
+  --text-secondary: #86B894;
+  --accent-start: #0B7A33;
+  --accent-end: #22C55E;
+  --accent-gold: #D4A017;
+  --surface-elevated: #101C13;
 }
 
 @layer utilities {
+  /* Background */
   .bg-primary { background-color: var(--bg-primary); }
   .bg-secondary { background-color: var(--bg-secondary); }
   .bg-sidebar { background-color: var(--sidebar-bg); }
+  .bg-surface { background-color: var(--surface-elevated); }
+
+  /* Text */
   .text-primary { color: var(--text-primary); }
   .text-secondary { color: var(--text-secondary); }
+  .text-gold { color: var(--accent-gold); }
+
+  /* Borders */
   .border-default { border-color: var(--border-default); }
-  .accent { background-image: linear-gradient(90deg, var(--accent-start), var(--accent-end)); color: #fff; }
-  .accent-text { background-image: linear-gradient(90deg, var(--accent-start), var(--accent-end)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .focus-ring { @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--accent-end)] focus-visible:ring-offset-[var(--bg-secondary)]; }
-  .elevated { @apply border-default bg-secondary; }
+  .border-gold { border-color: var(--accent-gold); }
+
+  /* Accent gradient */
+  .accent {
+    background-image: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+    color: #fff;
+  }
+  .accent-text {
+    background-image: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .accent-gold-border { border-left: 3px solid var(--accent-gold); }
+
+  /* Focus ring */
+  .focus-ring {
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--accent-end)];
+  }
+
+  /* Card */
+  .card {
+    @apply rounded-2xl border border-default bg-secondary backdrop-blur;
+  }
+  .elevated {
+    @apply border-default;
+    background-color: var(--surface-elevated);
+  }
+
+  /* Typography */
+  .font-display { font-family: 'DM Serif Display', Georgia, serif; }
+  .font-body { font-family: 'DM Sans', system-ui, sans-serif; }
 }
+
+/* ─── Animations ─────────────────────────────────────── */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+}
+.animate-float { animation: float 3s ease-in-out infinite; }
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+  background-size: 200% auto;
+  animation: shimmer 2s linear infinite;
+}
+
+@keyframes bounce-dot {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+.dot-1 { animation: bounce-dot 1.2s ease-in-out 0s infinite; }
+.dot-2 { animation: bounce-dot 1.2s ease-in-out 0.2s infinite; }
+.dot-3 { animation: bounce-dot 1.2s ease-in-out 0.4s infinite; }
+
+/* ─── Hero animated grid overlay ─────────────────────── */
+.hero-grid-overlay {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* ─── Mesh gradient background ───────────────────────── */
+.hero-mesh {
+  background:
+    radial-gradient(ellipse at 15% 80%, #0B7A33 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 20%, #D4A01722 0%, transparent 45%),
+    radial-gradient(ellipse at 50% 50%, #022010 0%, transparent 70%),
+    #040D06;
+}
+
+/* ─── Grain texture overlay ──────────────────────────── */
+.grain-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  opacity: 0.06;
+  pointer-events: none;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent-end); }

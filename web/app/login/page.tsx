@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation'
 import { isAuthed, signInOrUp } from '../../lib/auth'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
-import { Globe, ChevronDown, Mail, Lock, LogIn, ArrowRight, Eye, EyeOff } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { Globe, ChevronDown, Mail, Lock, LogIn, Eye, EyeOff, ArrowRight } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -16,9 +17,7 @@ export default function LoginPage() {
   const [showLang, setShowLang] = useState(false)
   const { t, lang, setLang } = useI18n()
 
-  useEffect(() => {
-    if (isAuthed()) router.replace('/welcome')
-  }, [router])
+  useEffect(() => { if (isAuthed()) router.replace('/welcome') }, [router])
 
   const languages = [
     { code: 'en', label: 'English' },
@@ -33,7 +32,6 @@ export default function LoginPage() {
     setLoading(true)
     try {
       if (!email || !password) throw new Error('Please fill in all fields.')
-      // Simple logic: name is part of email for logging in
       signInOrUp({ name: email.split('@')[0], email })
       router.replace('/welcome')
     } catch (err: any) {
@@ -44,135 +42,114 @@ export default function LoginPage() {
   }
 
   return (
-    <main
-      className="min-h-screen relative flex flex-col items-center overflow-hidden bg-green-950"
-    >
-      {/* Background Image with Overlay */}
-      <div
-        className="absolute inset-0 bg-cover bg-center opacity-40 scale-110"
-        style={{ backgroundImage: "url('/NYSC.jpg')" }}
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-green-950/90 via-green-900/60 to-green-950" />
+    <main className="min-h-screen relative flex flex-col items-center justify-center overflow-hidden bg-green-950">
+      {/* Background */}
+      <div className="absolute inset-0 bg-cover bg-center opacity-30 scale-110" style={{ backgroundImage: "url('/NYSC.jpg')" }} />
+      <div className="absolute inset-0 bg-gradient-to-br from-[#040D06]/95 via-green-950/80 to-[#0B7A33]/30" />
 
-      {/* Header */}
-      <header className="relative z-20 w-full px-4 md:px-6 py-4 md:py-6 flex items-center justify-between max-w-7xl">
-        <div className="flex items-center gap-2 md:gap-3 cursor-pointer" onClick={() => router.push('/')}>
-          <Image src="/NYSC-Nigeria-Logo.png" alt="NYSC Logo" width={36} height={36} className="md:w-12 md:h-12 rounded-full bg-white p-0.5 shadow-xl" />
-          <div className="hidden xs:block text-white">
-            <div className="text-[10px] md:text-xs font-black tracking-tighter leading-none uppercase">National Youth</div>
-            <div className="text-[8px] md:text-[10px] font-bold text-green-400 uppercase">Service Corps</div>
-          </div>
-        </div>
-
-        {/* Global Language Selector */}
+      {/* Language selector — top right */}
+      <div className="absolute top-5 right-5 z-30">
         <div className="relative">
           <button
             onClick={() => setShowLang(!showLang)}
-            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-full border border-white/10 backdrop-blur-md transition-all text-xs font-bold"
+            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-full border border-white/15 backdrop-blur-md transition-all text-xs font-semibold"
           >
-            <Globe className="w-4 h-4" />
-            <span>{languages.find(l => l.code === lang)?.label}</span>
-            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${showLang ? 'rotate-180' : ''}`} />
+            <Globe className="w-3.5 h-3.5" />
+            {languages.find(l => l.code === lang)?.label}
+            <ChevronDown className={`w-3 h-3 transition-transform ${showLang ? 'rotate-180' : ''}`} />
           </button>
-
           {showLang && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowLang(false)} />
-              <div className="absolute right-0 mt-3 w-48 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 overflow-hidden z-20 animate-in fade-in zoom-in duration-200 origin-top-right">
-                {languages.map((l) => (
+              <div className="absolute right-0 mt-2 w-40 bg-white/10 backdrop-blur-xl rounded-xl shadow-2xl border border-white/15 overflow-hidden z-20">
+                {languages.map(l => (
                   <button
                     key={l.code}
                     onClick={() => { setLang(l.code as any); setShowLang(false) }}
-                    className={`w-full flex items-center justify-between px-4 py-3 text-xs transition-colors ${lang === l.code ? 'bg-green-50 text-green-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
+                    className={`w-full px-4 py-2.5 text-left text-xs transition-colors ${lang === l.code ? 'bg-white/20 text-white font-semibold' : 'text-white/70 hover:bg-white/10'}`}
                   >
-                    <span>{l.label}</span>
+                    {l.label}
                   </button>
                 ))}
               </div>
             </>
           )}
         </div>
-      </header>
+      </div>
 
-      {/* Login Form Container */}
-      <div className="relative z-10 w-full max-w-md mx-auto px-4 md:px-6 flex-1 flex flex-col justify-center pb-12 md:pb-20">
-        <div className="text-center mb-6 md:mb-10">
-          <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-1 md:mb-2">{t('auth_login_title')}</h1>
-          <p className="text-green-200/70 text-[12px] md:text-sm font-medium">Access your intelligent NYSC assistant.</p>
-        </div>
-
-        <div className="bg-white rounded-3xl md:rounded-[32px] shadow-2xl overflow-hidden border border-white/20">
-          <div className="bg-green-600 px-6 md:px-8 py-3 md:py-4 text-white text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] text-center">
-            Secured Access Portal
+      {/* Glass Card */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        className="relative z-20 w-full max-w-md mx-5"
+      >
+        {/* Card container */}
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden">
+          {/* Logo + heading */}
+          <div className="flex flex-col items-center pt-10 pb-6 px-8 border-b border-white/10">
+            <Image src="/NYSC-Nigeria-Logo.png" alt="NYSC" width={56} height={56} className="rounded-full bg-white/10 p-1 shadow-xl mb-5" />
+            <h1 className="font-display text-3xl text-white text-center">{t('auth_login_title')}</h1>
+            <p className="text-white/50 text-sm mt-1 text-center">Access your intelligent NYSC assistant.</p>
           </div>
 
-          <form onSubmit={onSubmit} className="p-6 md:p-8 space-y-5 md:space-y-6">
+          {/* Form */}
+          <form onSubmit={onSubmit} className="p-8 space-y-5">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">{t('auth_email_label')}</label>
+              <label className="text-[10px] font-semibold text-white/50 uppercase tracking-widest">{t('auth_email_label')}</label>
               <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={e => setEmail(e.target.value)}
                   placeholder="name@example.com"
-                  className="w-full bg-gray-50 border-0 rounded-2xl px-11 py-4 text-sm font-bold focus:ring-2 focus:ring-green-500 transition-all placeholder:text-gray-300 shadow-inner"
+                  className="w-full bg-white/8 border border-white/10 rounded-xl pl-11 pr-4 py-3.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:ring-2 focus:ring-[var(--accent-end)] focus:border-transparent transition-all"
                   required
                 />
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">{t('auth_password_label')}</label>
+              <label className="text-[10px] font-semibold text-white/50 uppercase tracking-widest">{t('auth_password_label')}</label>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
                 <input
-                  type={showPassword ? "text" : "password"}
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full bg-gray-50 border-0 rounded-2xl px-11 py-4 text-sm font-bold focus:ring-2 focus:ring-green-500 transition-all placeholder:text-gray-300 shadow-inner pr-12"
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-white/8 border border-white/10 rounded-xl pl-11 pr-12 py-3.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:ring-2 focus:ring-[var(--accent-end)] focus:border-transparent transition-all"
                   required
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-green-600 transition-colors"
-                >
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70 transition-colors">
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
 
-            {error && <div className="text-xs text-red-600 font-bold bg-red-50 p-3 rounded-xl text-center border border-red-100">{error}</div>}
+            {error && <div className="text-xs text-red-300 bg-red-900/30 border border-red-500/30 p-3 rounded-xl text-center">{error}</div>}
 
             <button
               type="submit"
               disabled={loading}
-              className="group w-full bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase tracking-[0.2em] py-4 rounded-2xl shadow-xl shadow-green-900/20 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-semibold text-white bg-gradient-to-r from-[var(--accent-start)] to-[var(--accent-end)] hover:opacity-90 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50 shadow-lg shadow-green-900/30"
             >
-              <LogIn className="w-4 h-4 group-hover:scale-110 transition-transform" />
-              {loading ? 'Authenticating...' : t('auth_login_submit')}
+              {loading ? 'Signing in…' : (<><LogIn className="w-4 h-4" /> {t('auth_login_submit')}</>)}
             </button>
 
-            <div className="text-center pt-4 space-y-3">
-              <p className="text-xs font-bold text-gray-400">
+            <div className="text-center space-y-2 pt-2">
+              <p className="text-xs text-white/40">
                 {t('auth_no_account')}{' '}
-                <a href="/signup" className="text-green-700 hover:text-green-600 transition-colors border-b-2 border-green-700/20">{t('auth_signup_link')}</a>
+                <a href="/signup" className="text-[var(--accent-end)] hover:underline font-semibold">{t('auth_signup_link')}</a>
               </p>
-              <a href="#" className="block text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-green-600 transition-colors">
-                Forgot your credentials?
-              </a>
             </div>
           </form>
         </div>
-      </div>
+      </motion.div>
 
-      <div className="absolute bottom-8 w-full text-center">
-        <p className="text-white/20 text-[10px] font-bold uppercase tracking-[0.3em]">
-          Service and Humility • © 2026 NYSC
-        </p>
-      </div>
+      {/* Bottom watermark */}
+      <p className="absolute bottom-6 text-white/15 text-[10px] uppercase tracking-[0.3em]">Service and Humility • © 2026 NYSC</p>
     </main>
   )
 }

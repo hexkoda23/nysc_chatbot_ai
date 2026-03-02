@@ -226,7 +226,7 @@ export default function ChatApp() {
       typeOut(String(data.answer || ''), targetId, aiId, data.sources || [])
       return
     } catch {
-      const ai: Msg = { id: generateSessionId(), role: 'assistant', content: `Unable to reach the NYSC assistant at ${BASE_URL}. Please check your connection or ensure the backend is running.`, langCode: uiLang }
+      const ai: Msg = { id: generateSessionId(), role: 'assistant', content: `No network. Please check your connection and try again.`, langCode: uiLang }
       appendMsg(ai, targetId)
     } finally { setLoading(false) }
   }

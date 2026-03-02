@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { isAuthed, signInOrUp } from '../../lib/auth'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
+import { Globe, ChevronDown, Mail, Lock, LogIn, ArrowRight } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -11,11 +12,19 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { t } = useI18n()
+  const [showLang, setShowLang] = useState(false)
+  const { t, lang, setLang } = useI18n()
 
   useEffect(() => {
     if (isAuthed()) router.replace('/welcome')
   }, [router])
+
+  const languages = [
+    { code: 'en', label: 'English', flag: '🇬🇧' },
+    { code: 'yo', label: 'Yorùbá', flag: '🇳🇬' },
+    { code: 'ha', label: 'Hausa', flag: '🇳🇬' },
+    { code: 'ig', label: 'Igbo', flag: '🇳🇬' },
+  ]
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -23,6 +32,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       if (!email || !password) throw new Error('Please fill in all fields.')
+      // Simple logic: name is part of email for logging in
       signInOrUp({ name: email.split('@')[0], email })
       router.replace('/welcome')
     } catch (err: any) {
@@ -34,99 +44,128 @@ export default function LoginPage() {
 
   return (
     <main
-      className="min-h-[100dvh] relative flex flex-col items-center justify-between"
-      style={{
-        backgroundImage: "url('/NYSC.jpg')",
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-      }}
+      className="min-h-screen relative flex flex-col items-center overflow-hidden bg-green-950"
     >
-      {/* Overlay */}
-      <div className="absolute inset-0 bg-black/40 z-0" />
+      {/* Background Image with Overlay */}
+      <div
+        className="absolute inset-0 bg-cover bg-center opacity-40 scale-105"
+        style={{ backgroundImage: "url('/NYSC.jpg')" }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-b from-green-950/80 via-green-900/40 to-green-950" />
 
-      {/* Top Logo */}
-      <div className="relative z-10 flex flex-col items-center pt-8 pb-4">
-        <div className="flex items-center gap-3">
-          <Image src="/NYSC-Nigeria-Logo.png" alt="NYSC Logo" width={64} height={64} className="rounded-full" />
-          <div className="text-white text-center">
-            <div className="text-lg font-bold tracking-widest leading-tight">NATIONAL YOUTH SERVICE CORPS</div>
-            <div className="text-xs tracking-[0.25em] text-green-300">• SERVICE AND HUMILITY •</div>
+      {/* Header */}
+      <header className="relative z-20 w-full px-6 py-6 flex items-center justify-between max-w-7xl">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={() => router.push('/')}>
+          <Image src="/NYSC-Nigeria-Logo.png" alt="NYSC Logo" width={48} height={48} className="rounded-full bg-white p-0.5 shadow-xl" />
+          <div className="hidden sm:block text-white">
+            <div className="text-xs font-black tracking-tighter leading-none uppercase">National Youth</div>
+            <div className="text-[10px] font-bold text-green-400 uppercase">Service Corps</div>
           </div>
         </div>
-      </div>
 
-      {/* Login Card */}
-      <div className="relative z-10 w-full max-w-sm mx-auto px-4 flex-1 flex items-center justify-center">
-        <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl w-full overflow-hidden">
-          {/* Card Header */}
-          <div className="bg-green-600 px-6 py-3 text-white font-semibold text-center text-base tracking-wide">
-            Existing User Login
+        {/* Global Language Selector */}
+        <div className="relative">
+          <button
+            onClick={() => setShowLang(!showLang)}
+            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-full border border-white/10 backdrop-blur-md transition-all text-xs font-bold"
+          >
+            <Globe className="w-4 h-4" />
+            <span>{languages.find(l => l.code === lang)?.label}</span>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${showLang ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showLang && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowLang(false)} />
+              <div className="absolute right-0 mt-3 w-48 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 overflow-hidden z-20 animate-in fade-in zoom-in duration-200 origin-top-right">
+                {languages.map((l) => (
+                  <button
+                    key={l.code}
+                    onClick={() => { setLang(l.code as any); setShowLang(false) }}
+                    className={`w-full flex items-center justify-between px-4 py-3 text-xs transition-colors ${lang === l.code ? 'bg-green-50 text-green-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <span className="text-lg">{l.flag}</span>
+                      {l.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </header>
+
+      {/* Login Form Container */}
+      <div className="relative z-10 w-full max-w-md mx-auto px-6 flex-1 flex flex-col justify-center pb-20">
+        <div className="text-center mb-10">
+          <h1 className="text-4xl font-black text-white tracking-tight mb-2">Welcome Back</h1>
+          <p className="text-green-200/70 text-sm font-medium">Access your intelligent NYSC assistant.</p>
+        </div>
+
+        <div className="bg-white rounded-[32px] shadow-2xl overflow-hidden border border-white/20">
+          <div className="bg-green-600 px-8 py-4 text-white text-[10px] font-black uppercase tracking-[0.2em] text-center">
+            Secured Access Portal
           </div>
 
-          <form onSubmit={onSubmit} className="px-6 py-5 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                ✉ Email Address:
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="example@gmail.com"
-                className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-blue-50"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                🔒 Password:
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-blue-50"
-                required
-              />
-            </div>
-
-            {error && <div className="text-sm text-red-600 text-center">{error}</div>}
-
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={loading}
-                className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-6 py-2 rounded transition-colors duration-150 disabled:opacity-60"
-              >
-                {loading ? 'Logging in…' : 'Login'}
-              </button>
-            </div>
-
-            <div className="text-center space-y-1 pt-1">
-              <a href="/signup" className="text-xs text-green-700 hover:underline block">
-                Forgot Password or E-mail?
-              </a>
-              <div className="text-xs text-gray-500">
-                Don't have an account?{' '}
-                <a href="/signup" className="text-green-700 underline">Create Account</a>
+          <form onSubmit={onSubmit} className="p-8 space-y-6">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Email Address</label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@example.com"
+                  className="w-full bg-gray-50 border-0 rounded-2xl px-11 py-4 text-sm font-bold focus:ring-2 focus:ring-green-500 transition-all placeholder:text-gray-300 shadow-inner"
+                  required
+                />
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full bg-gray-50 border-0 rounded-2xl px-11 py-4 text-sm font-bold focus:ring-2 focus:ring-green-500 transition-all placeholder:text-gray-300 shadow-inner"
+                  required
+                />
+              </div>
+            </div>
+
+            {error && <div className="text-xs text-red-600 font-bold bg-red-50 p-3 rounded-xl text-center border border-red-100">{error}</div>}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="group w-full bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase tracking-[0.2em] py-4 rounded-2xl shadow-xl shadow-green-900/20 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <LogIn className="w-4 h-4 group-hover:scale-110 transition-transform" />
+              {loading ? 'Authenticating...' : 'Sign In Now'}
+            </button>
+
+            <div className="text-center pt-4 space-y-3">
+              <p className="text-xs font-bold text-gray-400">
+                New to the platform?{' '}
+                <a href="/signup" className="text-green-700 hover:text-green-600 transition-colors border-b-2 border-green-700/20">Create Account</a>
+              </p>
+              <a href="#" className="block text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-green-600 transition-colors">
+                Forgot your credentials?
+              </a>
             </div>
           </form>
         </div>
       </div>
 
-      {/* Bottom Banner Text */}
-      <div className="relative z-10 text-white text-left px-8 pb-8 w-full">
-        <div className="text-4xl font-black tracking-tight leading-tight opacity-70">
-          NYSC<br />CHATBOT<br />SYSTEM
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="absolute bottom-2 w-full text-center z-10">
-        <p className="text-white/50 text-[10px]">
-          Copyright © 2026 National Youth Service Corps. All rights reserved.
+      <div className="absolute bottom-8 w-full text-center">
+        <p className="text-white/20 text-[10px] font-bold uppercase tracking-[0.3em]">
+          Service and Humility • © 2026 NYSC
         </p>
       </div>
     </main>

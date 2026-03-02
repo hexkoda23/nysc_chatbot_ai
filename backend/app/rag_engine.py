@@ -572,35 +572,41 @@ def _make_llm(timeout: float = 10.0, retries: int = 2, model_override: str | Non
         if cache_key in _llm_cache:
             return _llm_cache[cache_key]
         try:
-            llm = ChatOpenAI(
-                api_key=groq_key,
-                base_url=base,
-                model=model,
-                temperature=0.1,
-                timeout=timeout,
-                max_retries=retries,
-            )
-        except TypeError:
-            os.environ["OPENAI_API_BASE"] = base
-            llm = ChatOpenAI(
-                api_key=groq_key,
-                model=model,
-                temperature=0.1,
-                timeout=timeout,
-                max_retries=retries,
-            )
-        _llm_cache[cache_key] = llm
-        return llm
-    # Default to OpenAI
-    cache_key = (timeout, retries, model_override)
-    if cache_key in _llm_cache:
-        return _llm_cache[cache_key]
-    llm = ChatOpenAI(
-        model=model_override or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        temperature=0.1,
-        timeout=timeout,
-        max_retries=retries,
-    )
+        llm = ChatOpenAI(
+            api_key=groq_key,
+            base_url=base,
+            model=model,
+            temperature=0.1,
+            frequency_penalty=0.5, # Discourages repetition
+            max_tokens=1000,       # Prevents runaway generation
+            timeout=timeout,
+            max_retries=retries,
+        )
+    except TypeError:
+        os.environ["OPENAI_API_BASE"] = base
+        llm = ChatOpenAI(
+            api_key=groq_key,
+            model=model,
+            temperature=0.1,
+            frequency_penalty=0.5,
+            max_tokens=1000,
+            timeout=timeout,
+            max_retries=retries,
+        )
+    _llm_cache[cache_key] = llm
+    return llm
+# Default to OpenAI
+cache_key = (timeout, retries, model_override)
+if cache_key in _llm_cache:
+    return _llm_cache[cache_key]
+llm = ChatOpenAI(
+    model=model_override or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+    temperature=0.1,
+    frequency_penalty=0.5,
+    max_tokens=1000,
+    timeout=timeout,
+    max_retries=retries,
+)
     _llm_cache[cache_key] = llm
     return llm
 
@@ -664,8 +670,7 @@ def get_agent(target_lang: str = "en"):
         "- Current allowance is N77,000/month (as of March 2025)\n"
         "- Senate list check URL: https://portal.nysc.org.ng/nysc2/VerifySenateLists.aspx\n"
         "- Registration portal: https://portal.nysc.org.ng/nysc1/\n"
-        "- Never say \"I cannot find\" if the tools returned results — synthesize them\n"
-        "- Maximum response time is 15 seconds — be thorough but concise"
+        "- Never say \"I cannot find\" if the tools returned results — synthesize them"
     )
     external = _load_external_prompt()
     if external:
@@ -826,6 +831,7 @@ def _fast_rag_response(message: str, conversation_context: str = "", target_lang
         )
     try:
         llm = _make_llm(timeout=20.0, retries=0)
+        # Use simple string prompt for direct LLM call
         response = llm.invoke(prompt)
         answer = response.content if hasattr(response, 'content') else str(response)
         return {"answer": answer, "sources": sources_list}

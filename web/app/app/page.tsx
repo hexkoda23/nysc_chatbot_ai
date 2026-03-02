@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Mic, Send, Plus, LogOut, Settings, Search } from 'lucide-react'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
-import { sendMessage, reloadCorpus, translateTexts } from '../../lib/api'
+import { sendMessage, reloadCorpus, translateTexts, BASE_URL } from '../../lib/api'
 import { generateSessionId } from '../../lib/utils'
 
 type Source = { source: string; snippet: string }
@@ -307,9 +307,8 @@ export default function ChatApp() {
       const ai: Msg = {
         id: generateSessionId(),
         role: 'assistant',
-        content:
-          'Unable to reach the NYSC assistant. Ensure the backend is running at 127.0.0.1:8000 and CORS allows http://localhost:5180.',
-        langCode: uiLang
+        content: `Unable to reach the NYSC assistant at ${BASE_URL}. Please check your internet connection or ensure the backend is running.`,
+        langCode: uiLang,
       }
       appendMsg(ai, targetId)
     } finally {

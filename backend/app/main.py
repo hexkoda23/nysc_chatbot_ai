@@ -73,8 +73,8 @@ app.add_middleware(
         "http://localhost:5180",
         "http://127.0.0.1:5180",
         # Production — Vercel
-        "https://*.vercel.app",
-        "https://nysc-chatbot-ai.vercel.app",  # update after deploy
+        "https://nysc-ai-chatbot.vercel.app",
+        "https://nysc-chatbot-ai.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],

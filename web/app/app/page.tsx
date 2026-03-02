@@ -213,7 +213,7 @@ export default function ChatApp() {
     setInput('')
     if (!authed && !isGreeting(text)) setAnonQuestionCount(prev => prev + 1)
     if (isGreeting(text)) {
-      const ai: Msg = { id: generateSessionId(), role: 'assistant', content: t('chat_greeting'), langCode: uiLang }
+      const ai: Msg = { id: generateSessionId(), role: 'assistant', content: 'How can I help you today?', langCode: uiLang }
       appendMsg(ai, targetId)
       return
     }
@@ -250,7 +250,7 @@ export default function ChatApp() {
           className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-white text-sm bg-gradient-to-r from-[var(--accent-start)] to-[var(--accent-end)] hover:opacity-90 hover:scale-[1.01] transition-all shadow-lg shadow-green-900/20 relative overflow-hidden"
         >
           <span className="absolute inset-0 animate-shimmer pointer-events-none" />
-          <Plus className="w-4 h-4" /> {t('chat_new_chat') || 'New Chat'}
+          <Plus className="w-4 h-4" /> New Chat
         </button>
       </div>
 
@@ -260,7 +260,7 @@ export default function ChatApp() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-secondary" />
           <input
             className="w-full bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-full pl-8 pr-4 py-2 text-xs text-primary focus:outline-none focus:ring-2 focus:ring-[var(--accent-end)] transition-all"
-            placeholder={t('chat_search_history') || 'Search chats…'}
+            placeholder="Search chats…"
             value={query}
             onChange={e => setQuery(e.target.value)}
           />
@@ -269,7 +269,7 @@ export default function ChatApp() {
 
       {/* History */}
       <div className="px-3 mb-2">
-        <div className="text-[10px] font-black text-secondary uppercase tracking-widest px-2">{t('chat_history') || 'History'}</div>
+        <div className="text-[10px] font-black text-secondary uppercase tracking-widest px-2">History</div>
       </div>
       <div className="flex-1 overflow-y-auto px-3 space-y-0.5">
         {filteredChats.map(c => (
@@ -288,11 +288,11 @@ export default function ChatApp() {
       <div className="p-4 border-t border-[var(--border-default)] space-y-1">
         <button className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-xs text-secondary hover:text-primary hover:bg-[var(--bg-primary)] transition-all"
           onClick={() => router.push('/preferences')}>
-          <Settings className="w-3.5 h-3.5" /> {t('chat_preferences') || 'Preferences'}
+          <Settings className="w-3.5 h-3.5" /> Preferences
         </button>
         <button className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-xs text-secondary hover:text-primary hover:bg-[var(--bg-primary)] transition-all"
           onClick={() => { signOut(); router.replace('/login') }}>
-          <LogOut className="w-3.5 h-3.5" /> {t('chat_logout') || 'Logout'}
+          <LogOut className="w-3.5 h-3.5" /> Logout
         </button>
       </div>
     </div>
@@ -402,7 +402,7 @@ export default function ChatApp() {
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center py-12 animate-in fade-in duration-500">
               <Image src="/NYSC-Nigeria-Logo.png" alt="NYSC" width={80} height={80} className="rounded-full opacity-20 mb-6" />
-              <h2 className="font-display text-3xl md:text-4xl text-primary mb-2">{t('chat_assist_title')}</h2>
+              <h2 className="font-display text-3xl md:text-4xl text-primary mb-2">What can I help you with today?</h2>
               <p className="text-sm text-secondary mb-10 max-w-xs">Policy-grounded answers in English, Yorùbá, Hausa, and Igbo — instantly.</p>
               <div className="flex flex-wrap gap-3 justify-center max-w-lg">
                 {SUGGESTIONS.map(s => (
@@ -440,8 +440,8 @@ export default function ChatApp() {
                   )}
                   <div
                     className={`px-4 py-3 text-sm leading-relaxed ${m.role === 'user'
-                        ? 'bg-gradient-to-br from-[var(--accent-start)] to-[var(--accent-end)] text-white shadow-lg shadow-green-900/20'
-                        : 'bg-[var(--surface-elevated)] border border-[var(--border-default)] text-primary whitespace-pre-wrap'
+                      ? 'bg-gradient-to-br from-[var(--accent-start)] to-[var(--accent-end)] text-white shadow-lg shadow-green-900/20'
+                      : 'bg-[var(--surface-elevated)] border border-[var(--border-default)] text-primary whitespace-pre-wrap'
                       }`}
                     style={{
                       borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
@@ -489,7 +489,7 @@ export default function ChatApp() {
             <button
               onClick={() => alert(t('coming_soon'))}
               className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] text-secondary hover:text-[var(--accent-start)] hover:border-[var(--accent-end)] transition-all"
-              title={t('chat_voice_input')}
+              title="Voice input (coming soon)"
             >
               <Mic className="w-4 h-4" />
             </button>
@@ -500,7 +500,7 @@ export default function ChatApp() {
               className="flex-1 resize-none bg-transparent text-sm text-primary placeholder:text-secondary/60 focus:outline-none leading-relaxed min-h-[36px] max-h-[140px]"
               value={input}
               onChange={e => setInput(e.target.value)}
-              placeholder={t('chat_placeholder') || 'Ask me anything about NYSC…'}
+              placeholder="Ask me anything about NYSC…"
               rows={1}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
             />

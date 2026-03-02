@@ -65,18 +65,21 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        # Local development
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:5179",
         "http://127.0.0.1:5179",
         "http://localhost:5180",
         "http://127.0.0.1:5180",
+        # Production — Vercel
+        "https://*.vercel.app",
+        "https://nysc-chatbot-ai.vercel.app",  # update after deploy
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 @app.get("/health")
 def health() -> Dict[str, str]:

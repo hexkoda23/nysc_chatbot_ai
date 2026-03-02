@@ -250,7 +250,7 @@ export default function ChatApp() {
           className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-white text-sm bg-gradient-to-r from-[var(--accent-start)] to-[var(--accent-end)] hover:opacity-90 hover:scale-[1.01] transition-all shadow-lg shadow-green-900/20 relative overflow-hidden"
         >
           <span className="absolute inset-0 animate-shimmer pointer-events-none" />
-          <Plus className="w-4 h-4" /> New Chat
+          <Plus className="w-4 h-4" /> {t('chat_new_chat')}
         </button>
       </div>
 
@@ -260,7 +260,7 @@ export default function ChatApp() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-secondary" />
           <input
             className="w-full bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-full pl-8 pr-4 py-2 text-xs text-primary focus:outline-none focus:ring-2 focus:ring-[var(--accent-end)] transition-all"
-            placeholder="Search chats…"
+            placeholder={t('chat_search_history')}
             value={query}
             onChange={e => setQuery(e.target.value)}
           />
@@ -269,7 +269,7 @@ export default function ChatApp() {
 
       {/* History */}
       <div className="px-3 mb-2">
-        <div className="text-[10px] font-black text-secondary uppercase tracking-widest px-2">History</div>
+        <div className="text-[10px] font-black text-secondary uppercase tracking-widest px-2">{t('chat_history')}</div>
       </div>
       <div className="flex-1 overflow-y-auto px-3 space-y-0.5">
         {filteredChats.map(c => (
@@ -288,11 +288,11 @@ export default function ChatApp() {
       <div className="p-4 border-t border-[var(--border-default)] space-y-1">
         <button className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-xs text-secondary hover:text-primary hover:bg-[var(--bg-primary)] transition-all"
           onClick={() => router.push('/preferences')}>
-          <Settings className="w-3.5 h-3.5" /> Preferences
+          <Settings className="w-3.5 h-3.5" /> {t('chat_preferences')}
         </button>
         <button className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-xs text-secondary hover:text-primary hover:bg-[var(--bg-primary)] transition-all"
           onClick={() => { signOut(); router.replace('/login') }}>
-          <LogOut className="w-3.5 h-3.5" /> Logout
+          <LogOut className="w-3.5 h-3.5" /> {t('chat_logout')}
         </button>
       </div>
     </div>
@@ -489,7 +489,7 @@ export default function ChatApp() {
             <button
               onClick={() => alert(t('coming_soon'))}
               className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] text-secondary hover:text-[var(--accent-start)] hover:border-[var(--accent-end)] transition-all"
-              title="Voice input (coming soon)"
+              title={t('coming_soon')}
             >
               <Mic className="w-4 h-4" />
             </button>
@@ -500,7 +500,7 @@ export default function ChatApp() {
               className="flex-1 resize-none bg-transparent text-sm text-primary placeholder:text-secondary/60 focus:outline-none leading-relaxed min-h-[36px] max-h-[140px]"
               value={input}
               onChange={e => setInput(e.target.value)}
-              placeholder="Ask me anything about NYSC…"
+              placeholder={t('chat_placeholder')}
               rows={1}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
             />

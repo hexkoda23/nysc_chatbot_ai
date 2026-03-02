@@ -52,8 +52,8 @@ export function Header({ lang: externalLang, onLangChange, langOptions }: Header
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: 'easeOut' }}
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled
-          ? 'bg-[#040D06]/80 backdrop-blur-xl border-b border-white/8 shadow-lg shadow-black/20'
-          : 'bg-transparent border-b border-transparent'
+        ? 'bg-[#040D06]/80 backdrop-blur-xl border-b border-white/8 shadow-lg shadow-black/20'
+        : 'bg-transparent border-b border-transparent'
         }`}
     >
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -110,11 +110,6 @@ export function Header({ lang: externalLang, onLangChange, langOptions }: Header
           {/* Login */}
           <a href="/login" className="hidden sm:inline-flex items-center px-4 py-2 rounded-lg border border-white/15 text-white/70 hover:text-white hover:border-white/30 text-xs font-medium transition-all duration-200">
             {t('login')}
-          </a>
-
-          {/* Enter / CTA */}
-          <a href="/app" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-gradient-to-r from-[var(--accent-start)] to-[var(--accent-end)] hover:opacity-90 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-md shadow-green-900/30">
-            {t('get_started')}
           </a>
         </div>
       </div>

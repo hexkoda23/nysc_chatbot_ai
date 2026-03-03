@@ -28,7 +28,7 @@ export function clearUser(): void {
   localStorage.removeItem("nysc_user");
 }
 
-export function isAuthenticated(): boolean {
+export function isAuthed(): boolean {
   return !!getUser();
 }
 
@@ -47,7 +47,19 @@ export function clearAuthToken(): void {
   localStorage.removeItem("nysc_token");
 }
 
-export function logout(): void {
+export function signOut(): void {
   clearUser();
   clearAuthToken();
+}
+
+export function signInOrUp(user: { name: string; email: string }): void {
+  const newUser: User = {
+    id: Math.random().toString(36).substring(2),
+    name: user.name,
+    phone: '',
+    language: 'en',
+    createdAt: new Date().toISOString()
+  };
+  setUser(newUser);
+  setAuthToken("mock_token_" + newUser.id);
 }

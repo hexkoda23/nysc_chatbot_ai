@@ -1,34 +1,53 @@
-export type User = {
-  name: string
-  email: string
-  createdAt: number
-}
+// web/lib/auth.ts
 
-const KEY = 'nysc_auth'
-
-export function isAuthed(): boolean {
-  if (typeof window === 'undefined') return false
-  return !!localStorage.getItem(KEY)
+export interface User {
+  id: string;
+  name: string;
+  phone: string;
+  language: string;
+  createdAt: string;
 }
 
 export function getUser(): User | null {
-  if (typeof window === 'undefined') return null
-  const raw = localStorage.getItem(KEY)
-  if (!raw) return null
+  if (typeof window === "undefined") return null;
   try {
-    return JSON.parse(raw) as User
+    const raw = localStorage.getItem("nysc_user");
+    return raw ? JSON.parse(raw) : null;
   } catch {
-    return null
+    return null;
   }
 }
 
-export function signInOrUp(user: { name: string; email: string }) {
-  if (typeof window === 'undefined') return
-  const payload: User = { ...user, createdAt: Date.now() }
-  localStorage.setItem(KEY, JSON.stringify(payload))
+export function setUser(user: User): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("nysc_user", JSON.stringify(user));
 }
 
-export function signOut() {
-  if (typeof window === 'undefined') return
-  localStorage.removeItem(KEY)
+export function clearUser(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("nysc_user");
+}
+
+export function isAuthenticated(): boolean {
+  return !!getUser();
+}
+
+export function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("nysc_token");
+}
+
+export function setAuthToken(token: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("nysc_token", token);
+}
+
+export function clearAuthToken(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("nysc_token");
+}
+
+export function logout(): void {
+  clearUser();
+  clearAuthToken();
 }

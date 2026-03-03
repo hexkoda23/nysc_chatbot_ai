@@ -1,0 +1,10 @@
+# backend/.gitignore — make sure .env is in here
+.env
+.env.local
+.env.production
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.DS_Store

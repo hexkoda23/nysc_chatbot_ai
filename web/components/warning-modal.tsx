@@ -55,14 +55,14 @@ export function WarningModal({ open, onClose, onContinue, onLogin, onSignup }: P
                   onClick={onSignup}
                   className="w-full py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-[var(--accent-start)] to-[var(--accent-end)] hover:opacity-90 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-green-900/20 text-sm"
                 >
-                  Create Account
+                  {t('auth_signup_link')}
                 </button>
                 <div className="flex gap-3">
                   <button
                     onClick={onLogin}
                     className="flex-1 py-3 rounded-xl border border-white/10 text-white hover:bg-white/5 transition-colors text-sm font-medium"
                   >
-                    Login
+                    {t('login')}
                   </button>
                   <button
                     onClick={onContinue}

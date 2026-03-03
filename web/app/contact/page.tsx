@@ -55,12 +55,12 @@ export default function ContactPage() {
                 <a href="/" className="rounded-lg border border-default bg-primary px-4 py-2 text-sm">Cancel</a>
               </div>
               <div className="text-xs text-secondary">
-                Or email us directly at contact@nysc.ai
+                Or email me directly at <a href="mailto:[EMAIL_ADDRESS]">[kehindeadeleke92@gmail.com]</a>
               </div>
             </form>
           ) : (
             <div className="text-sm">
-              Thanks, {name.split(" ")[0] || "there"} — your message has been recorded. We’ll get back to you at {email}.
+              Thanks, {name.split(" ")[0] || "there"} — your message has been recorded. I’ll get back to you at {email}.
             </div>
           )}
         </div>

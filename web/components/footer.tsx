@@ -14,8 +14,8 @@ export function Footer() {
             <div className="flex items-center gap-3 mb-4">
               <Image src="/NYSC-Nigeria-Logo.png" alt="NYSC Logo" width={44} height={44} className="rounded-full" />
               <div>
-                <div className="font-bold text-sm tracking-widest">NYSC AI</div>
-                <div className="text-green-300 text-[10px] tracking-widest">SERVICE AND HUMILITY</div>
+                <div className="font-bold text-sm tracking-widest">{t('brand')}</div>
+                <div className="text-green-300 text-[10px] tracking-widest uppercase">{t('brand_motto')}</div>
               </div>
             </div>
             <p className="text-green-200 text-xs leading-relaxed">{t('hero_subtitle')}</p>
@@ -45,7 +45,7 @@ export function Footer() {
               <li><a href="#security" className="hover:text-white transition-colors">{t('footer_security')}</a></li>
               <li>
                 <a href="https://portal.nysc.org.ng" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
-                  NYSC Portal ↗
+                  {t('footer_portal')}
                 </a>
               </li>
             </ul>
@@ -66,11 +66,11 @@ export function Footer() {
       {/* Lower footer */}
       <div className="bg-green-900 border-t border-green-700">
         <div className="container py-4 text-xs text-green-400 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p>© 2026 National Youth Service Corps AI Assistant. All rights reserved.</p>
+          <p>{t('footer_copyright_full')}</p>
           <div className="flex gap-4">
-            <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Twitter</a>
-            <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">LinkedIn</a>
-            <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">GitHub</a>
+            <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">{t('social_twitter')}</a>
+            <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">{t('social_linkedin')}</a>
+            <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">{t('social_github')}</a>
           </div>
         </div>
       </div>

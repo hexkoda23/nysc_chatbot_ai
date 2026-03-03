@@ -61,10 +61,10 @@ export function Header({ lang: externalLang, onLangChange, langOptions }: Header
         <a href="/" className="flex items-center gap-2.5 group">
           <Image src="/NYSC-Nigeria-Logo.png" alt="NYSC Logo" width={32} height={32} className="rounded-full group-hover:opacity-90 transition-opacity" />
           <div className="flex flex-col leading-tight">
-            <span className="font-display text-white text-base leading-none">NYSC AI</span>
-            <span className="text-[var(--accent-gold)] text-[8px] tracking-[0.2em] uppercase hidden sm:block">Official Assistant</span>
+            <span className="font-display text-white text-base leading-none">{t('brand')}</span>
+            <span className="text-[var(--accent-gold)] text-[8px] tracking-[0.2em] uppercase hidden sm:block">{t('brand_tagline')}</span>
           </div>
-          <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-[var(--accent-gold)]/40 text-[var(--accent-gold)] ml-1 font-semibold">Beta</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-[var(--accent-gold)]/40 text-[var(--accent-gold)] ml-1 font-semibold">{t('beta')}</span>
         </a>
 
         {/* Nav links */}

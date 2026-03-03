@@ -11,3 +11,8 @@ requests
 httpx
 serpapi
 
+langchain-core
+langchain-text-splitters
+groq
+docarray
+pydantic

@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { isAuthed, signInOrUp } from '@/lib/auth'
@@ -155,5 +155,3 @@ export default function SignupPage() {
     </main>
   )
 }
-/ /   f o r c e   u p d a t e  
- 

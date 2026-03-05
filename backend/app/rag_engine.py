@@ -563,7 +563,8 @@ def _make_llm(timeout: float = 10.0, retries: int = 2, model_override: str | Non
     Otherwise use default OpenAI.
     """
     from langchain_openai import ChatOpenAI
-    groq_key = os.getenv("NYSC")
+    # Prefer NYSC_API_KEY then FALLBACK to NYSC
+    groq_key = os.getenv("NYSC_API_KEY") or os.getenv("NYSC")
     
     # Use explicit override, then Groq model env, then OpenAI model env, then defaults
     if groq_key:
@@ -597,8 +598,9 @@ def _make_llm(timeout: float = 10.0, retries: int = 2, model_override: str | Non
 
 
 def get_agent(target_lang: str = "en"):
-    if not (os.getenv("NYSC") or os.getenv("OPENAI_API_KEY")):
-        raise RuntimeError("Set NYSC (Groq) or OPENAI_API_KEY in .env")
+    if not (os.getenv("NYSC_API_KEY") or os.getenv("NYSC") or os.getenv("OPENAI_API_KEY")):
+        raise RuntimeError("Set NYSC_API_KEY (Groq), NYSC (Groq), or OPENAI_API_KEY in .env")
+
     llm = _make_llm(timeout=25.0, retries=1)
     tools = [search_local_docs, search_nysc_online, get_nysc_portal_links]
     

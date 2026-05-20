@@ -28,6 +28,7 @@ type Chat = { id: string; title: string; msgs: Msg[]; langCode?: string }
 type FeedbackForm = { open?: boolean; category?: string; comment?: string; sent?: 'good' | 'bad'; error?: string; pending?: boolean }
 
 const STORAGE_KEY = 'nysc_chats'
+const LEGACY_FALLBACK_MARKER = 'I could not generate a full AI answer right now'
 const isGreeting = (t: string) => {
   const s = t.trim().toLowerCase()
   return ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening'].some(g => s === g || s.startsWith(g + ' '))
@@ -83,6 +84,79 @@ export default function ChatApp() {
   }
 
   const feedbackOptions = ['wrong answer', 'outdated info', 'not enough detail', 'no source', 'other']
+
+  const cleanDisplayText = (text = '') => {
+    return text
+      .replace(/AI provider note:[^\n]*(\n|$)/gi, '')
+      .replace(/\s*\(?rag\/[^\s)]+\.md\)?/gi, '')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/\s+/g, ' ')
+      .replace(/Local project documents mention/g, 'The available NYSC documents mention')
+      .trim()
+  }
+
+  const splitSentences = (text: string) => {
+    return cleanDisplayText(text)
+      .split(/(?<=[.!?])\s+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 35)
+  }
+
+  const cleanSources = (sources: Source[] = []) => {
+    return sources.map(source => ({
+      ...source,
+      snippet: cleanDisplayText(source.snippet || ''),
+    }))
+  }
+
+  const buildFallbackAnswer = (question: string, sources: Source[] = []) => {
+    const sentences = cleanSources(sources).flatMap(source => splitSentences(source.snippet || ''))
+    const seen = new Set<string>()
+    const unique = sentences.filter(sentence => {
+      const key = sentence.toLowerCase().slice(0, 120)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    const q = question.toLowerCase()
+    const amountSentence = unique.find(sentence => /(n\s?\d|₦\s?\d|\d[\d,]*\s?naira)/i.test(sentence))
+    const direct = (q.includes('allowance') && (q.includes('current') || q.includes('how much') || q.includes('amount')) && amountSentence)
+      ? amountSentence
+      : unique[0]
+    const details = unique.filter(sentence => sentence !== direct).slice(0, 3)
+    const sourceLines = cleanSources(sources)
+      .filter((source, index, all) => all.findIndex(item => (item.title || item.source) === (source.title || source.source) && item.source_url === source.source_url) === index)
+      .slice(0, 4)
+      .map((source, index) => `${index + 1}. ${source.title || source.source}${source.source_url ? ` - ${source.source_url}` : ''}`)
+
+    return [
+      'Based on the available NYSC documents:',
+      '',
+      direct || 'I found related guidance in the available NYSC documents.',
+      ...(details.length ? ['', 'Key points:', ...details.map((item, index) => `${index + 1}. ${item}`)] : []),
+      ...(sourceLines.length ? ['', 'Sources:', ...sourceLines] : []),
+      '',
+      'Please confirm critical issues with the official NYSC portal or your state secretariat.',
+    ].join('\n')
+  }
+
+  const normalizeAssistantAnswer = (answer: string, sources: Source[] = [], question = '') => {
+    if (
+      answer.includes(LEGACY_FALLBACK_MARKER) ||
+      /AI provider note:/i.test(answer) ||
+      /rag\/[^\s)]+\.md/i.test(answer)
+    ) {
+      return buildFallbackAnswer(question, sources)
+    }
+    return answer.replace(/AI provider note:[^\n]*(\n|$)/gi, '').replace(/\(?rag\/[^\s)]+\.md\)?/gi, '').trim()
+  }
+
+  const displayAnswerFor = (message: Msg, index: number) => {
+    if (message.role !== 'assistant') return message.content
+    const previous = messages[index - 1]
+    const question = previous?.role === 'user' ? previous.content : ''
+    return normalizeAssistantAnswer(message.content, message.sources || [], question)
+  }
 
   const updateFeedbackForm = (messageId: string, patch: FeedbackForm) => {
     setFeedbackForms(prev => ({ ...prev, [messageId]: { ...(prev[messageId] || {}), ...patch } }))
@@ -265,8 +339,10 @@ export default function ChatApp() {
         isFallback: Boolean(data.is_fallback),
         lowConfidence: Boolean(data.low_confidence),
       }
+      const sources = cleanSources(data.sources || [])
+      const answer = normalizeAssistantAnswer(String(data.answer || ''), sources, text)
       appendMsg(ai, targetId)
-      typeOut(String(data.answer || ''), targetId, aiId, data.sources || [])
+      typeOut(answer, targetId, aiId, sources)
       return
     } catch {
       const ai: Msg = { id: generateSessionId(), role: 'assistant', content: `I could not reach the NYSC assistant backend. Please check your connection and try again.`, langCode: uiLang, isFallback: true }
@@ -495,7 +571,7 @@ export default function ChatApp() {
                       borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
                     }}
                   >
-                    {renderContent(m.content)}
+                    {renderContent(displayAnswerFor(m, idx))}
                   </div>
                   {m.role === 'assistant' && m.isFallback && (
                     <div className="text-[10px] text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
@@ -508,7 +584,7 @@ export default function ChatApp() {
                         Sources
                       </div>
                       <div className="divide-y divide-[var(--border-default)]">
-                        {m.sources.slice(0, 5).map((s, si) => {
+                        {cleanSources(m.sources).slice(0, 5).map((s, si) => {
                           const label = s.title || s.source
                           const body = s.source_url || (s.topic ? `Topic: ${s.topic}` : 'NYSC document source')
                           const sourceUrl = s.source_url
@@ -519,7 +595,6 @@ export default function ChatApp() {
                                 <div className="min-w-0 flex-1">
                                   <div className="font-semibold text-primary truncate">{si + 1}. {label}</div>
                                   <div className="text-[10px] text-secondary break-all">{body}</div>
-                                  {s.snippet && <div className="mt-1 text-[11px] text-secondary line-clamp-2">{s.snippet}</div>}
                                 </div>
                                 {sourceUrl && (
                                   <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="text-secondary hover:text-[var(--accent-start)]" title="Open source URL">
@@ -533,7 +608,7 @@ export default function ChatApp() {
                       </div>
                     </div>
                   )}
-                  {m.role === 'assistant' && m.backendMessageId && m.content.trim().length > 0 && (
+                  {m.role === 'assistant' && m.backendMessageId && displayAnswerFor(m, idx).trim().length > 0 && (
                     <div className="mt-1 flex flex-col gap-2">
                       <div className="flex items-center gap-1.5">
                         <button

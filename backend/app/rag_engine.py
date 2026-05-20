@@ -120,7 +120,7 @@ class ChunkRecord:
             "topic": self.topic,
             "last_checked": self.last_checked,
             "official": self.official,
-            "snippet": self.content[:500],
+            "snippet": clean_source_snippet(self.content),
             "score": round(self.score, 3),
         }
 
@@ -679,6 +679,14 @@ def clean_chunk_text(text: str) -> str:
     return text.strip()
 
 
+def clean_source_snippet(text: str, limit: int = 260) -> str:
+    cleaned = clean_chunk_text(text)
+    cleaned = cleaned.replace("Local project documents mention", "The available NYSC documents mention")
+    if len(cleaned) > limit:
+        cleaned = cleaned[: limit - 3].rstrip() + "..."
+    return cleaned
+
+
 def sentence_score(question: str, sentence: str) -> float:
     q_tokens = set(tokenize(question))
     if not q_tokens:
@@ -689,7 +697,7 @@ def sentence_score(question: str, sentence: str) -> float:
     score = len(q_tokens & s_tokens) / max(1, len(q_tokens))
     q_lower = question.lower()
     s_lower = sentence.lower()
-    asks_amount = "how much" in q_lower or "amount" in q_lower
+    asks_amount = "how much" in q_lower or "amount" in q_lower or ("current" in q_lower and "allowance" in q_lower)
     has_amount = bool(re.search(r"(n\s?\d|₦\s?\d|\d[\d,]*\s?naira)", s_lower))
     if asks_amount and has_amount:
         score += 1.0

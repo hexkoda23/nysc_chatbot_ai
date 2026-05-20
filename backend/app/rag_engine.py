@@ -70,6 +70,8 @@ SENSITIVE_TERMS = {
     "abscond",
     "certificate",
     "clearance",
+    "pop",
+    "passing out",
 }
 
 TOPIC_KEYWORDS: Sequence[Tuple[str, Sequence[str]]] = (
@@ -80,7 +82,7 @@ TOPIC_KEYWORDS: Sequence[Tuple[str, Sequence[str]]] = (
     ("ppa", ("ppa", "place of primary assignment", "primary assignment", "employer", "rejection")),
     ("cds", ("cds", "community development", "community service")),
     ("allowance", ("allowance", "allawee", "stipend", "salary", "bank account", "payment")),
-    ("clearance", ("clearance", "biometric", "abscond", "final clearance")),
+    ("clearance", ("clearance", "biometric", "abscond", "final clearance", "pop", "p.o.p", "passing out", "passing-out", "passing out parade", "discharge certificate")),
     ("exemption", ("exemption", "exclusion", "above 30", "part-time", "certificate")),
     ("portal", ("portal", "dashboard", "password", "biometric capture", "passport photograph", "posting online")),
     ("security", ("scam", "pay someone", "influence", "fraud", "unsafe")),
@@ -103,6 +105,9 @@ CANONICAL_QUERY_TERMS = {
     "exemption",
     "callup",
     "call-up",
+    "pop",
+    "passing",
+    "discharge",
 }
 
 QUERY_ALIASES = {
@@ -152,6 +157,10 @@ SEMANTIC_EXPANSIONS: Sequence[Tuple[Sequence[str], str]] = (
     (
         ("clearance", "biometric"),
         "monthly clearance biometric ppa confirmation cds attendance allowance lgi",
+    ),
+    (
+        ("pop", "p.o.p", "passing out", "passing-out", "passing out parade", "final clearance", "discharge certificate"),
+        "final clearance passing out parade discharge certificate ppa clearance letter cds records identity documents lgi state secretariat",
     ),
 )
 
@@ -427,14 +436,18 @@ def build_query_context(question: str, session_id: str) -> QueryContext:
 
 
 def tokenize(text: str) -> List[str]:
-    words = re.findall(r"[a-zA-Z0-9]+", normalize_query_terms(text).lower())
+    words = re.findall(r"[a-zA-Z0-9]+", text.lower())
     return [w for w in words if len(w) > 1 and w not in STOPWORDS]
+
+
+def tokenize_query(text: str) -> List[str]:
+    return tokenize(normalize_query_terms(text))
 
 
 def build_fts_query(question: str) -> str:
     terms = []
     seen = set()
-    for token in tokenize(question):
+    for token in tokenize_query(question):
         if token in seen:
             continue
         seen.add(token)
@@ -651,7 +664,7 @@ def row_to_chunk(row: sqlite3.Row, score: float = 0.0) -> ChunkRecord:
 
 
 def lexical_score(question: str, chunk: ChunkRecord, topic_hint: Optional[str]) -> float:
-    q_tokens = set(tokenize(question))
+    q_tokens = set(tokenize_query(question))
     if not q_tokens:
         return 0.0
     content_tokens = set(tokenize(chunk.content))
@@ -740,6 +753,17 @@ def retrieve_chunks(question: str, top_k: Optional[int] = None, topic: Optional[
 def is_sensitive_question(question: str) -> bool:
     q = question.lower()
     return any(term in q for term in SENSITIVE_TERMS)
+
+
+def is_pop_question(question: str) -> bool:
+    q = normalize_query_terms(question).lower()
+    compact = re.sub(r"[^a-z0-9]+", " ", q)
+    return bool(
+        re.search(r"\bp\s*o\s*p\b", compact)
+        or re.search(r"\bpop\b", compact)
+        or re.search(r"\bpass(?:ing)?[- ]?out\b", q)
+        or any(phrase in q for phrase in ("passing out parade", "final clearance", "discharge certificate"))
+    )
 
 
 def format_sources(chunks: Sequence[ChunkRecord]) -> str:
@@ -1050,6 +1074,36 @@ def fallback_answer(question: str, chunks: Sequence[ChunkRecord]) -> str:
     return "\n".join(lines).strip()
 
 
+def pop_guidance_answer(question: str, chunks: Sequence[ChunkRecord]) -> str:
+    answer_chunks = [chunk for chunk in chunks if chunk.topic == "clearance"] or list(chunks)
+    q = question.lower()
+    if "final clearance" in q and "pop" not in q:
+        opening = "Final clearance is the end-of-service process before passing out."
+        timing = ""
+    else:
+        opening = "POP means passing out, so treat this as a final-clearance matter."
+        timing = "Since your POP is tomorrow, " if "tomorrow" in q else ""
+    follow_sentence = (
+        f"{timing}follow the instructions from your LGI and state secretariat, and go with the documents required in your state."
+        if timing
+        else "Follow the instructions from your LGI and state secretariat, and go with the documents required in your state."
+    )
+    lines = [
+        "Based on the available NYSC documents:",
+        "",
+        f"{opening} {follow_sentence}",
+        "",
+        "What to do now:",
+        "1. Prepare your final clearance forms, PPA clearance letter, CDS records, identity documents, and any state-specific NYSC requirements.",
+        "2. Confirm the reporting time, venue, and any extra instruction from your LGI or state secretariat.",
+        "3. If your PPA clearance has any issue, find out the reason, resolve genuine attendance or work issues, and report unfair refusal to your LGI.",
+        "4. If you had medical leave or missed clearance, keep the evidence and NYSC approval because poor documentation can affect clearance.",
+        "",
+        format_sources(answer_chunks[:5]),
+    ]
+    return "\n".join(lines).strip()
+
+
 def append_caution(answer: str, question: str) -> str:
     if is_sensitive_question(question):
         caution = "Please confirm critical issues with the official NYSC portal or your state secretariat."
@@ -1091,7 +1145,7 @@ def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Di
         return template
 
     query_context = build_query_context(question, session_id)
-    strict_topic = query_context.topic_hint if query_context.is_follow_up else None
+    strict_topic = query_context.topic_hint if query_context.is_follow_up or is_pop_question(query_context.answer_question) else None
     chunks = retrieve_chunks(query_context.retrieval_question, top_k=get_top_k(), topic=strict_topic)
     answer_chunks = [chunk for chunk in chunks if chunk.topic != "faq"] or chunks
     sources = [chunk.as_source() for chunk in answer_chunks]
@@ -1108,6 +1162,19 @@ def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Di
             "provider": None,
             "confidence": 0.0,
             "low_confidence": True,
+        }
+
+    if is_pop_question(query_context.answer_question):
+        pop_chunks = [chunk for chunk in answer_chunks if chunk.topic == "clearance"] or answer_chunks
+        answer = pop_guidance_answer(query_context.answer_question, pop_chunks)
+        answer = append_caution(answer, query_context.answer_question)
+        return {
+            "answer": answer,
+            "sources": [chunk.as_source() for chunk in pop_chunks],
+            "is_fallback": True,
+            "provider": None,
+            "confidence": round(best_score, 3),
+            "low_confidence": low_confidence,
         }
 
     if low_confidence:

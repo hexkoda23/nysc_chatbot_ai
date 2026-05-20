@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
-import { sendMessage, reloadCorpus, translateTexts, sendFeedback } from '../../lib/api'
+import { sendMessage, translateTexts, sendFeedback } from '../../lib/api'
 import { generateSessionId } from '../../lib/utils'
 
 type Source = { source: string; snippet: string; title?: string; filepath?: string; source_url?: string; topic?: string; score?: number }
@@ -95,6 +95,13 @@ export default function ChatApp() {
       .trim()
   }
 
+  const stripInlineSources = (text = '') => {
+    return text
+      .replace(/(?:^|\n)\s*Sources:\s*[\s\S]*?(?=\n\s*(?:Caution:|Please confirm critical issues)|$)/gi, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  }
+
   const splitSentences = (text: string) => {
     return cleanDisplayText(text)
       .split(/(?<=[.!?])\s+/)
@@ -134,16 +141,12 @@ export default function ChatApp() {
       ? amountSentence
       : unique[0]
     const details = unique.filter(sentence => sentence !== direct).slice(0, 3)
-    const sourceLines = uniqueSources(sources)
-      .slice(0, 4)
-      .map((source, index) => `${index + 1}. ${source.title || source.source}${source.source_url ? ` - ${source.source_url}` : ''}`)
 
     return [
       'Based on the available NYSC documents:',
       '',
       direct || 'I found related guidance in the available NYSC documents.',
       ...(details.length ? ['', 'Key points:', ...details.map((item, index) => `${index + 1}. ${item}`)] : []),
-      ...(sourceLines.length ? ['', 'Sources:', ...sourceLines] : []),
       '',
       'Please confirm critical issues with the official NYSC portal or your state secretariat.',
     ].join('\n')
@@ -158,7 +161,7 @@ export default function ChatApp() {
     ) {
       return buildFallbackAnswer(question, sources)
     }
-    return answer.replace(/AI provider note:[^\n]*(\n|$)/gi, '').replace(/\(?rag\/[^\s)]+\.md\)?/gi, '').trim()
+    return stripInlineSources(answer.replace(/AI provider note:[^\n]*(\n|$)/gi, '').replace(/\(?rag\/[^\s)]+\.md\)?/gi, '')).trim()
   }
 
   const displayAnswerFor = (message: Msg, index: number) => {
@@ -304,7 +307,6 @@ export default function ChatApp() {
     } else { newChat() }
   }, [])
 
-  useEffect(() => { reloadCorpus() }, [])
   useEffect(() => { if (!listRef.current) return; listRef.current.scrollTop = listRef.current.scrollHeight }, [messages, loading])
 
   // Auto-resize textarea

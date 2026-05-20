@@ -519,12 +519,12 @@ def format_sources(chunks: Sequence[ChunkRecord]) -> str:
     seen = set()
     index = 1
     for chunk in chunks:
-        key = (chunk.title, chunk.filepath)
+        key = (chunk.title, chunk.source_url)
         if key in seen:
             continue
         seen.add(key)
-        url = f" ({chunk.source_url})" if chunk.source_url else ""
-        lines.append(f"{index}. {chunk.title} - {chunk.filepath}{url}")
+        url = f" - {chunk.source_url}" if chunk.source_url else ""
+        lines.append(f"{index}. {chunk.title}{url}")
         index += 1
     return "\n".join(lines)
 
@@ -545,7 +545,6 @@ def build_grounded_prompt(question: str, chunks: Sequence[ChunkRecord], target_l
             "\n".join(
                 [
                     f"[Source {i}] {chunk.title}",
-                    f"File: {chunk.filepath}",
                     f"Topic: {chunk.topic}",
                     f"Last checked: {chunk.last_checked or 'not stated'}",
                     f"URL: {chunk.source_url or 'not stated'}",
@@ -674,22 +673,92 @@ def generate_with_llm(question: str, chunks: Sequence[ChunkRecord], target_lang:
         return None, provider, f"{type(exc).__name__}: {str(exc)[:200]}"
 
 
-def fallback_answer(chunks: Sequence[ChunkRecord]) -> str:
+def clean_chunk_text(text: str) -> str:
+    text = re.sub(r"^#{1,6}\s+.*$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def sentence_score(question: str, sentence: str) -> float:
+    q_tokens = set(tokenize(question))
+    if not q_tokens:
+        return 0.0
+    s_tokens = set(tokenize(sentence))
+    if not s_tokens:
+        return 0.0
+    score = len(q_tokens & s_tokens) / max(1, len(q_tokens))
+    q_lower = question.lower()
+    s_lower = sentence.lower()
+    asks_amount = "how much" in q_lower or "amount" in q_lower
+    has_amount = bool(re.search(r"(n\s?\d|₦\s?\d|\d[\d,]*\s?naira)", s_lower))
+    if asks_amount and has_amount:
+        score += 1.0
+        if "per month" in s_lower or "monthly" in s_lower or "allowance" in s_lower:
+            score += 0.4
+    elif asks_amount:
+        score -= 0.35
+    if "when" in q_lower and any(word in s_lower for word in ("when", "usually", "monthly", "after", "during")):
+        score += 0.2
+    if any(phrase in q_lower and phrase in s_lower for phrase in ("bank account", "monthly clearance", "call-up letter", "medical fitness")):
+        score += 0.25
+    return score
+
+
+def select_fallback_sentences(question: str, chunks: Sequence[ChunkRecord], limit: int = 4) -> List[str]:
+    scored: List[Tuple[float, int, str]] = []
+    for chunk_index, chunk in enumerate(chunks[:5]):
+        text = clean_chunk_text(chunk.content)
+        parts = re.split(r"(?<=[.!?])\s+", text)
+        for sentence in parts:
+            clean = sentence.strip(" -")
+            if len(clean) < 35:
+                continue
+            clean = clean.replace("Local project documents mention", "The available NYSC documents mention")
+            score = sentence_score(question, clean)
+            if len(clean) > 280:
+                clean = clean[:277].rstrip() + "..."
+            if score <= 0:
+                continue
+            scored.append((score + max(0, 0.1 - (chunk_index * 0.02)), chunk_index, clean))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    selected: List[str] = []
+    seen = set()
+    for _, _, sentence in scored:
+        signature = content_checksum(sentence[:180])
+        if signature in seen:
+            continue
+        seen.add(signature)
+        selected.append(sentence)
+        if len(selected) >= limit:
+            break
+
+    if selected:
+        return selected
+
+    fallback = []
+    for chunk in chunks[:3]:
+        text = clean_chunk_text(chunk.content)
+        if len(text) > 280:
+            text = text[:277].rstrip() + "..."
+        fallback.append(text)
+    return fallback
+
+
+def fallback_answer(question: str, chunks: Sequence[ChunkRecord]) -> str:
     if not chunks:
         return "I could not find this in the available NYSC documents."
 
-    lines = [
-        "I could not generate a full AI answer right now, but I found these relevant NYSC document sections.",
-        "",
-    ]
-    for i, chunk in enumerate(chunks[:5], start=1):
-        snippet = re.sub(r"\s+", " ", chunk.content).strip()
-        if len(snippet) > 550:
-            snippet = snippet[:547].rstrip() + "..."
-        lines.append(f"{i}. {chunk.title} ({chunk.filepath})")
-        lines.append(snippet)
-        lines.append("")
-    lines.append(format_sources(chunks[:5]))
+    sentences = select_fallback_sentences(question, chunks)
+    direct = sentences[0] if sentences else "I found related guidance in the available NYSC documents."
+    details = sentences[1:4]
+
+    lines = ["Based on the available NYSC documents:", "", direct]
+    if details:
+        lines.extend(["", "Key points:"])
+        for index, sentence in enumerate(details, start=1):
+            lines.append(f"{index}. {sentence}")
+    lines.extend(["", format_sources(chunks[:5])])
     return "\n".join(lines).strip()
 
 
@@ -752,8 +821,8 @@ def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Di
 
     if low_confidence:
         answer = (
-            "I found only weak matches in the available NYSC documents, so I cannot answer confidently.\n\n"
-            f"{fallback_answer(chunks[:3])}"
+            "I found only weak matches in the available NYSC documents, so please treat this as low-confidence guidance.\n\n"
+            f"{fallback_answer(question, chunks[:3])}"
         )
         answer = append_caution(answer, question)
         return {
@@ -778,9 +847,7 @@ def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Di
             "low_confidence": False,
         }
 
-    answer = fallback_answer(chunks)
-    if error:
-        answer = f"{answer}\n\nAI provider note: {error}"
+    answer = fallback_answer(question, chunks)
     answer = append_caution(answer, question)
     return {
         "answer": answer,

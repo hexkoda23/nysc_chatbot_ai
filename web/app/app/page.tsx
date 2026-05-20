@@ -499,7 +499,7 @@ export default function ChatApp() {
                   </div>
                   {m.role === 'assistant' && m.isFallback && (
                     <div className="text-[10px] text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
-                      Source-based fallback answer. The AI provider was unavailable or confidence was low.
+                      Answer based on the available NYSC documents.
                     </div>
                   )}
                   {m.sources && m.sources.length > 0 && (
@@ -510,7 +510,7 @@ export default function ChatApp() {
                       <div className="divide-y divide-[var(--border-default)]">
                         {m.sources.slice(0, 5).map((s, si) => {
                           const label = s.title || s.source
-                          const body = s.filepath || s.source
+                          const body = s.source_url || (s.topic ? `Topic: ${s.topic}` : 'NYSC document source')
                           const sourceUrl = s.source_url
                           return (
                             <div key={`${body}-${si}`} className="px-3 py-2 text-xs">

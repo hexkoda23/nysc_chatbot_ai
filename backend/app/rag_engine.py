@@ -13,7 +13,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import httpx
 from dotenv import load_dotenv
 
-from .database import PROJECT_ROOT, get_db, init_db, utc_now
+from .database import PROJECT_ROOT, get_db, get_recent_messages, init_db, utc_now
 
 
 load_dotenv(PROJECT_ROOT / ".env")
@@ -55,7 +55,9 @@ STOPWORDS = {
 SENSITIVE_TERMS = {
     "medical",
     "health",
+    "relocate",
     "relocation",
+    "redeploy",
     "redeployment",
     "payment",
     "allowance",
@@ -83,6 +85,33 @@ TOPIC_KEYWORDS: Sequence[Tuple[str, Sequence[str]]] = (
     ("portal", ("portal", "dashboard", "password", "biometric capture", "passport photograph", "posting online")),
     ("security", ("scam", "pay someone", "influence", "fraud", "unsafe")),
     ("saed", ("saed", "skill", "entrepreneurship")),
+)
+
+SEMANTIC_EXPANSIONS: Sequence[Tuple[Sequence[str], str]] = (
+    (
+        ("redeploy", "redeployment", "relocate", "relocation", "change state", "deployment state"),
+        "relocation redeployment apply portal form supporting documents approval state secretariat",
+    ),
+    (
+        ("allowance", "allawee", "stipend", "salary", "payment"),
+        "monthly allowance payment bank account clearance federal allowance",
+    ),
+    (
+        ("steps", "process", "procedure", "how do i", "what next"),
+        "steps process procedure apply portal submit documents approval report print",
+    ),
+    (
+        ("camp", "orientation"),
+        "orientation camp registration kit call-up letter medical fitness prohibited items",
+    ),
+    (
+        ("ppa", "primary assignment", "employer"),
+        "place of primary assignment ppa acceptance rejection posting letter lgi employer",
+    ),
+    (
+        ("clearance", "biometric"),
+        "monthly clearance biometric ppa confirmation cds attendance allowance lgi",
+    ),
 )
 
 
@@ -127,7 +156,14 @@ class ChunkRecord:
         }
 
 
-CONVERSATION_HISTORY: Dict[str, List[Tuple[str, str]]] = {}
+@dataclass
+class QueryContext:
+    original_question: str
+    retrieval_question: str
+    answer_question: str
+    topic_hint: Optional[str] = None
+    previous_user_question: Optional[str] = None
+    is_follow_up: bool = False
 
 
 def get_rag_docs_path() -> Path:
@@ -196,10 +232,116 @@ def infer_topic(text: str) -> str:
     q = text.lower()
     if "registration" in q and any(word in q for word in ("closed", "closing", "deadline", "open", "opened")):
         return "portal"
+    if "biometric capture" in q:
+        return "portal"
     for topic, keywords in TOPIC_KEYWORDS:
         if any(keyword in q for keyword in keywords):
             return topic
     return "faq"
+
+
+def expand_semantic_query(text: str) -> str:
+    q = text.lower()
+    extras = [extra for triggers, extra in SEMANTIC_EXPANSIONS if any(trigger in q for trigger in triggers)]
+    if not extras:
+        return text
+    return " ".join([text, *extras])
+
+
+def is_follow_up_question(question: str) -> bool:
+    q = re.sub(r"[^a-z0-9\s]", " ", question.lower())
+    q = re.sub(r"\s+", " ", q).strip()
+    words = q.split()
+    if not words:
+        return False
+
+    exact_followups = {
+        "steps",
+        "the steps",
+        "what are the steps",
+        "what are the requirements",
+        "what documents",
+        "what next",
+        "what should i do",
+        "how do i do it",
+        "how do i proceed",
+        "how can i do that",
+        "what about that",
+    }
+    if q in exact_followups:
+        return True
+
+    if infer_topic(q) != "faq" and len(words) > 5:
+        return False
+
+    followup_terms = {
+        "it",
+        "that",
+        "there",
+        "then",
+        "next",
+        "steps",
+        "documents",
+        "requirements",
+        "process",
+        "procedure",
+    }
+    starts_like_followup = q.startswith(("what about", "how about", "and ", "then ", "so "))
+    return len(words) <= 7 and (starts_like_followup or any(term in words for term in followup_terms))
+
+
+def previous_user_questions(session_id: str, current_question: str, limit: int = 8) -> List[str]:
+    try:
+        messages = get_recent_messages(session_id, limit=limit)
+    except Exception:
+        return []
+
+    current_normalized = normalize_text(current_question).lower()
+    skipped_current = False
+    previous: List[str] = []
+    for message in reversed(messages):
+        if message.get("role") != "user":
+            continue
+        content = normalize_text(str(message.get("content") or ""))
+        if not content:
+            continue
+        if not skipped_current and content.lower() == current_normalized:
+            skipped_current = True
+            continue
+        if _get_template_response(content):
+            continue
+        previous.append(content)
+        if len(previous) >= 3:
+            break
+    return previous
+
+
+def build_query_context(question: str, session_id: str) -> QueryContext:
+    previous_questions = previous_user_questions(session_id, question)
+    previous = previous_questions[0] if previous_questions else None
+    current_topic = infer_topic(question)
+    is_follow_up = bool(previous and is_follow_up_question(question))
+
+    if is_follow_up and previous:
+        previous_topic = infer_topic(previous)
+        topic_hint = previous_topic if previous_topic != "faq" else (current_topic if current_topic != "faq" else None)
+        combined = f"{previous}. Follow-up: {question}"
+        return QueryContext(
+            original_question=question,
+            retrieval_question=expand_semantic_query(combined),
+            answer_question=f"Previous question: {previous}\nCurrent follow-up: {question}",
+            topic_hint=topic_hint,
+            previous_user_question=previous,
+            is_follow_up=True,
+        )
+
+    topic_hint = current_topic if current_topic != "faq" else None
+    return QueryContext(
+        original_question=question,
+        retrieval_question=expand_semantic_query(question),
+        answer_question=question,
+        topic_hint=topic_hint,
+    )
 
 
 def tokenize(text: str) -> List[str]:
@@ -715,6 +857,11 @@ def sentence_score(question: str, sentence: str) -> float:
         score += 0.55
         if any(word in s_lower for word in ("portal", "upload", "submit", "form")):
             score += 0.4
+    if any(word in q_lower for word in ("steps", "process", "procedure")):
+        if any(word in s_lower for word in ("in camp", "applications", "portal", "choose the reason", "upload", "submit", "wait for")):
+            score += 1.1
+        if "after approval" in s_lower and not any(word in q_lower for word in ("approved", "after approval")):
+            score -= 0.45
     if "after" in q_lower and any(word in q_lower for word in ("approval", "approved")) and any(word in s_lower for word in ("after approval", "report", "update", "continue serving")):
         score += 0.65
     if "medical" in q_lower and any(word in s_lower for word in ("medical report", "hospital", "diagnosis", "tests", "fabricate")):
@@ -745,6 +892,11 @@ def build_complete_passage(sentences: Sequence[str], best_index: int, max_senten
     return " ".join(sentences[start:end]).replace("Local project documents mention", "The available NYSC documents mention")
 
 
+def asks_for_steps(question: str) -> bool:
+    q = question.lower()
+    return any(phrase in q for phrase in ("what are the steps", "steps", "how can i apply", "how do i apply", "how do i proceed"))
+
+
 def select_fallback_sentences(question: str, chunks: Sequence[ChunkRecord], limit: int = 4) -> List[str]:
     scored: List[Tuple[float, int, str]] = []
     topic_hint = infer_topic(question)
@@ -761,7 +913,8 @@ def select_fallback_sentences(question: str, chunks: Sequence[ChunkRecord], limi
                 best_index = sentence_index
         if best_score <= 0 or best_index < 0:
             continue
-        passage = build_complete_passage(parts, best_index, include_previous="medical" not in question.lower())
+        include_previous = not any(term in question.lower() for term in ("medical", "biometric capture"))
+        passage = build_complete_passage(parts, best_index, include_previous=include_previous)
         scored.append((best_score + max(0, 0.1 - (chunk_index * 0.02)), chunk_index, passage))
 
     scored.sort(key=lambda item: item[0], reverse=True)
@@ -798,6 +951,13 @@ def fallback_answer(question: str, chunks: Sequence[ChunkRecord]) -> str:
     details = sentences[1:4] if direct_sentence_count < 3 else []
 
     lines = ["Based on the available NYSC documents:", "", direct]
+    if asks_for_steps(question):
+        step_sentences = split_clean_sentences(direct)
+        if len(step_sentences) > 1:
+            lines = ["Based on the available NYSC documents:", "", "The steps are:"]
+            for index, sentence in enumerate(step_sentences[:5], start=1):
+                lines.append(f"{index}. {sentence}")
+            details = []
     if details:
         lines.extend(["", "Key points:"])
         for index, sentence in enumerate(details, start=1):
@@ -846,14 +1006,16 @@ def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Di
     if template:
         return template
 
-    chunks = retrieve_chunks(question, top_k=get_top_k())
+    query_context = build_query_context(question, session_id)
+    strict_topic = query_context.topic_hint if query_context.is_follow_up else None
+    chunks = retrieve_chunks(query_context.retrieval_question, top_k=get_top_k(), topic=strict_topic)
     sources = [chunk.as_source() for chunk in chunks]
     best_score = max((chunk.score for chunk in chunks), default=0.0)
     low_confidence = best_score < get_min_score()
 
     if not chunks:
         answer = "I could not find this in the available NYSC documents."
-        answer = append_caution(answer, question)
+        answer = append_caution(answer, query_context.answer_question)
         return {
             "answer": answer,
             "sources": [],
@@ -866,9 +1028,9 @@ def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Di
     if low_confidence:
         answer = (
             "I found only weak matches in the available NYSC documents, so please treat this as low-confidence guidance.\n\n"
-            f"{fallback_answer(question, chunks[:3])}"
+            f"{fallback_answer(query_context.answer_question, chunks[:3])}"
         )
-        answer = append_caution(answer, question)
+        answer = append_caution(answer, query_context.answer_question)
         return {
             "answer": answer,
             "sources": sources,
@@ -878,10 +1040,10 @@ def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Di
             "low_confidence": True,
         }
 
-    llm_answer, provider, error = generate_with_llm(question, chunks, target_lang)
+    llm_answer, provider, error = generate_with_llm(query_context.answer_question, chunks, target_lang)
     if llm_answer:
         answer = append_sources_if_missing(llm_answer, chunks)
-        answer = append_caution(answer, question)
+        answer = append_caution(answer, query_context.answer_question)
         return {
             "answer": answer,
             "sources": sources,
@@ -891,8 +1053,8 @@ def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Di
             "low_confidence": False,
         }
 
-    answer = fallback_answer(question, chunks)
-    answer = append_caution(answer, question)
+    answer = fallback_answer(query_context.answer_question, chunks)
+    answer = append_caution(answer, query_context.answer_question)
     return {
         "answer": answer,
         "sources": sources,

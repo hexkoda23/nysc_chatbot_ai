@@ -6,7 +6,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, Optional
+from typing import Any, Dict, Iterable, Iterator, List, Optional
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -174,6 +174,30 @@ def insert_message(
     return msg_id
 
 
+def get_recent_messages(conversation_id: str, limit: int = 8) -> List[Dict[str, Any]]:
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT role, content, sources_json, created_at
+            FROM messages
+            WHERE conversation_id = ?
+            ORDER BY rowid DESC
+            LIMIT ?
+            """,
+            (conversation_id, max(1, min(limit, 20))),
+        ).fetchall()
+
+    return [
+        {
+            "role": row["role"],
+            "content": row["content"],
+            "sources_json": row["sources_json"],
+            "created_at": row["created_at"],
+        }
+        for row in reversed(rows)
+    ]
+
+
 def insert_feedback(message_id: str, rating: str, comment: Optional[str]) -> int:
     with get_db() as conn:
         cur = conn.execute(
@@ -202,4 +226,3 @@ def insert_eval_result(
             (question, expected_topic, answer, 1 if passed else 0, notes, utc_now()),
         )
         return int(cur.lastrowid)
-

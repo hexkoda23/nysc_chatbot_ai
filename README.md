@@ -7,7 +7,7 @@ Production-light NYSC assistant built with a Next.js frontend, FastAPI backend, 
 - Frontend: Next.js 14 in `web/`
 - Backend: FastAPI in `backend/app/`
 - Knowledge base: local markdown files in `rag/`
-- Retrieval: SQLite FTS5 with lexical scoring fallback
+- Retrieval: SQLite FTS5 with lexical scoring, semantic keyword expansion, and conversation-aware follow-up rewriting
 - Persistence: SQLite database from `DATABASE_URL`
 - LLM providers: Groq, Gemini, OpenRouter, or OpenAI, selected server-side
 - Fallback mode: works without any LLM API key by returning a source-based answer from retrieved documents
@@ -138,6 +138,7 @@ Sources:
 ## Evaluations
 
 The 100-question NYSC eval set is in `evals/nysc_questions.json`.
+These questions are not used to train or fine-tune any model. They are a test suite for retrieval, citations, fallback behavior, and topic coverage.
 
 Run:
 
@@ -152,6 +153,10 @@ python backend/scripts/run_evals.py
 ```
 
 The eval checks source retrieval, topic match, fallback usage, low-confidence answers, and failed retrievals. Results are written to SQLite and `evals/eval_results_latest.json`.
+
+## Conversation Memory
+
+The backend stores chat messages in SQLite and uses recent messages to understand short follow-ups. For example, if a user asks about redeployment and then asks "what are the steps", the backend rewrites the retrieval query with the previous redeployment question before searching the local NYSC documents. This is lightweight session memory, not model training.
 
 ## Security Basics
 

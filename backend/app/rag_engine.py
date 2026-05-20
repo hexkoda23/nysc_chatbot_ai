@@ -87,6 +87,47 @@ TOPIC_KEYWORDS: Sequence[Tuple[str, Sequence[str]]] = (
     ("saed", ("saed", "skill", "entrepreneurship")),
 )
 
+CANONICAL_QUERY_TERMS = {
+    "redeploy",
+    "redeployment",
+    "relocate",
+    "relocation",
+    "allowance",
+    "clearance",
+    "registration",
+    "biometric",
+    "portal",
+    "camp",
+    "ppa",
+    "cds",
+    "exemption",
+    "callup",
+    "call-up",
+}
+
+QUERY_ALIASES = {
+    "redploy": "redeploy",
+    "redployed": "redeployed",
+    "redployment": "redeployment",
+    "redeply": "redeploy",
+    "redeploment": "redeployment",
+    "redelpoy": "redeploy",
+    "redeloy": "redeploy",
+    "redepoy": "redeploy",
+    "relocaton": "relocation",
+    "relocat": "relocate",
+    "allawee": "allowance",
+    "allowence": "allowance",
+    "biometic": "biometric",
+    "biometrics": "biometric",
+    "portel": "portal",
+    "calup": "call-up",
+    "callup": "call-up",
+    "cann": "can",
+    "foillow": "follow",
+    "folow": "follow",
+}
+
 SEMANTIC_EXPANSIONS: Sequence[Tuple[Sequence[str], str]] = (
     (
         ("redeploy", "redeployment", "relocate", "relocation", "change state", "deployment state"),
@@ -196,6 +237,41 @@ def normalize_text(text: str) -> str:
     return text.strip()
 
 
+def edit_distance_at_most(left: str, right: str, limit: int = 2) -> bool:
+    if abs(len(left) - len(right)) > limit:
+        return False
+    previous = list(range(len(right) + 1))
+    for i, left_char in enumerate(left, start=1):
+        current = [i]
+        row_min = i
+        for j, right_char in enumerate(right, start=1):
+            cost = 0 if left_char == right_char else 1
+            value = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
+            current.append(value)
+            row_min = min(row_min, value)
+        if row_min > limit:
+            return False
+        previous = current
+    return previous[-1] <= limit
+
+
+def normalize_query_terms(text: str) -> str:
+    def fix_token(match: re.Match[str]) -> str:
+        token = match.group(0)
+        lower = token.lower()
+        replacement = QUERY_ALIASES.get(lower)
+        if not replacement and len(lower) >= 6:
+            for canonical in CANONICAL_QUERY_TERMS:
+                if edit_distance_at_most(lower, canonical.replace("-", ""), limit=2):
+                    replacement = canonical
+                    break
+        if not replacement:
+            return token
+        return replacement.capitalize() if token[:1].isupper() else replacement
+
+    return re.sub(r"[A-Za-z][A-Za-z-]*", fix_token, text)
+
+
 def content_checksum(text: str) -> str:
     normalized = re.sub(r"\s+", " ", text.strip().lower())
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
@@ -229,7 +305,7 @@ def parse_frontmatter(raw: str) -> Tuple[Dict[str, Any], str, List[str]]:
 
 
 def infer_topic(text: str) -> str:
-    q = text.lower()
+    q = normalize_query_terms(text).lower()
     if "registration" in q and any(word in q for word in ("closed", "closing", "deadline", "open", "opened")):
         return "portal"
     if "biometric capture" in q:
@@ -241,11 +317,12 @@ def infer_topic(text: str) -> str:
 
 
 def expand_semantic_query(text: str) -> str:
-    q = text.lower()
+    normalized = normalize_query_terms(text)
+    q = normalized.lower()
     extras = [extra for triggers, extra in SEMANTIC_EXPANSIONS if any(trigger in q for trigger in triggers)]
     if not extras:
-        return text
-    return " ".join([text, *extras])
+        return normalized
+    return " ".join([normalized, *extras])
 
 
 def is_follow_up_question(question: str) -> bool:
@@ -297,6 +374,7 @@ def previous_user_questions(session_id: str, current_question: str, limit: int =
         return []
 
     current_normalized = normalize_text(current_question).lower()
+    current_corrected = normalize_query_terms(current_question).lower()
     skipped_current = False
     previous: List[str] = []
     for message in reversed(messages):
@@ -305,7 +383,11 @@ def previous_user_questions(session_id: str, current_question: str, limit: int =
         content = normalize_text(str(message.get("content") or ""))
         if not content:
             continue
-        if not skipped_current and content.lower() == current_normalized:
+        content_corrected = normalize_query_terms(content).lower()
+        if not skipped_current and content.lower() in {current_normalized, current_corrected}:
+            skipped_current = True
+            continue
+        if not skipped_current and content_corrected in {current_normalized, current_corrected}:
             skipped_current = True
             continue
         if _get_template_response(content):
@@ -345,7 +427,7 @@ def build_query_context(question: str, session_id: str) -> QueryContext:
 
 
 def tokenize(text: str) -> List[str]:
-    words = re.findall(r"[a-zA-Z0-9]+", text.lower())
+    words = re.findall(r"[a-zA-Z0-9]+", normalize_query_terms(text).lower())
     return [w for w in words if len(w) > 1 and w not in STOPWORDS]
 
 
@@ -601,6 +683,7 @@ def fetch_chunks_by_ids(conn: sqlite3.Connection, ids: Sequence[str]) -> List[sq
 
 def retrieve_chunks(question: str, top_k: Optional[int] = None, topic: Optional[str] = None) -> List[ChunkRecord]:
     ensure_index()
+    question = normalize_query_terms(question)
     top_k = top_k or get_top_k()
     topic_hint = topic or infer_topic(question)
     fts_query = build_fts_query(question)
@@ -830,6 +913,7 @@ def clean_source_snippet(text: str) -> str:
 
 
 def sentence_score(question: str, sentence: str) -> float:
+    question = normalize_query_terms(question)
     q_tokens = set(tokenize(question))
     if not q_tokens:
         return 0.0
@@ -1001,7 +1085,7 @@ def _get_template_response(message: str) -> Optional[Dict[str, Any]]:
 
 
 def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Dict[str, Any]:
-    question = normalize_text(message)[:2000]
+    question = normalize_query_terms(normalize_text(message)[:2000])
     template = _get_template_response(question)
     if template:
         return template
@@ -1009,8 +1093,9 @@ def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Di
     query_context = build_query_context(question, session_id)
     strict_topic = query_context.topic_hint if query_context.is_follow_up else None
     chunks = retrieve_chunks(query_context.retrieval_question, top_k=get_top_k(), topic=strict_topic)
-    sources = [chunk.as_source() for chunk in chunks]
-    best_score = max((chunk.score for chunk in chunks), default=0.0)
+    answer_chunks = [chunk for chunk in chunks if chunk.topic != "faq"] or chunks
+    sources = [chunk.as_source() for chunk in answer_chunks]
+    best_score = max((chunk.score for chunk in answer_chunks), default=0.0)
     low_confidence = best_score < get_min_score()
 
     if not chunks:
@@ -1028,7 +1113,7 @@ def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Di
     if low_confidence:
         answer = (
             "I found only weak matches in the available NYSC documents, so please treat this as low-confidence guidance.\n\n"
-            f"{fallback_answer(query_context.answer_question, chunks[:3])}"
+            f"{fallback_answer(query_context.answer_question, answer_chunks[:3])}"
         )
         answer = append_caution(answer, query_context.answer_question)
         return {
@@ -1040,9 +1125,9 @@ def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Di
             "low_confidence": True,
         }
 
-    llm_answer, provider, error = generate_with_llm(query_context.answer_question, chunks, target_lang)
+    llm_answer, provider, error = generate_with_llm(query_context.answer_question, answer_chunks, target_lang)
     if llm_answer:
-        answer = append_sources_if_missing(llm_answer, chunks)
+        answer = append_sources_if_missing(llm_answer, answer_chunks)
         answer = append_caution(answer, query_context.answer_question)
         return {
             "answer": answer,
@@ -1053,7 +1138,7 @@ def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Di
             "low_confidence": False,
         }
 
-    answer = fallback_answer(query_context.answer_question, chunks)
+    answer = fallback_answer(query_context.answer_question, answer_chunks)
     answer = append_caution(answer, query_context.answer_question)
     return {
         "answer": answer,

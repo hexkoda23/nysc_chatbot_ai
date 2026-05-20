@@ -172,12 +172,28 @@ export default function ChatApp() {
     setFeedbackForms(prev => ({ ...prev, [messageId]: { ...(prev[messageId] || {}), ...patch } }))
   }
 
+  const openNeedsWorkFeedback = (message: Msg) => {
+    if (!message.backendMessageId) {
+      updateFeedbackForm(message.id, { open: true, error: 'Feedback is available after the answer finishes sending.' })
+      return
+    }
+    const current = feedbackForms[message.id] || {}
+    updateFeedbackForm(message.id, {
+      open: !current.open,
+      category: current.category || 'wrong answer',
+      error: undefined,
+    })
+  }
+
   const submitFeedback = async (message: Msg, rating: 'good' | 'bad') => {
-    if (!message.backendMessageId) return
+    if (!message.backendMessageId) {
+      updateFeedbackForm(message.id, { open: true, pending: false, error: 'Feedback is available after the answer finishes sending.' })
+      return
+    }
     const form = feedbackForms[message.id] || {}
     const reason = rating === 'bad'
-      ? [form.category, form.comment].filter(Boolean).join(': ')
-      : form.comment
+      ? [form.category || 'needs work', form.comment].filter(Boolean).join(': ')
+      : (form.comment || 'helpful')
     updateFeedbackForm(message.id, { pending: true, error: undefined })
     try {
       await sendFeedback({ message_id: message.backendMessageId, rating, comment: reason })
@@ -623,17 +639,18 @@ export default function ChatApp() {
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => submitFeedback(m, 'good')}
-                          disabled={feedbackForms[m.id]?.pending || feedbackForms[m.id]?.sent === 'good'}
+                          disabled={feedbackForms[m.id]?.pending || Boolean(feedbackForms[m.id]?.sent)}
                           className="inline-flex items-center gap-1 rounded-md border border-[var(--border-default)] px-2 py-1 text-[10px] text-secondary hover:text-primary hover:border-[var(--accent-end)] disabled:opacity-60"
                         >
                           <ThumbsUp className="w-3 h-3" /> Helpful
                         </button>
                         <button
-                          onClick={() => updateFeedbackForm(m.id, { open: !feedbackForms[m.id]?.open })}
-                          disabled={feedbackForms[m.id]?.pending || feedbackForms[m.id]?.sent === 'bad'}
+                          onClick={() => openNeedsWorkFeedback(m)}
+                          disabled={feedbackForms[m.id]?.pending || Boolean(feedbackForms[m.id]?.sent)}
                           className="inline-flex items-center gap-1 rounded-md border border-[var(--border-default)] px-2 py-1 text-[10px] text-secondary hover:text-primary hover:border-[var(--accent-end)] disabled:opacity-60"
+                          aria-expanded={Boolean(feedbackForms[m.id]?.open)}
                         >
-                          <ThumbsDown className="w-3 h-3" /> Needs work
+                          <ThumbsDown className="w-3 h-3" /> {feedbackForms[m.id]?.open ? 'Add details' : 'Needs work'}
                         </button>
                         {feedbackForms[m.id]?.sent && (
                           <span className="text-[10px] text-secondary">Feedback saved.</span>
@@ -641,6 +658,9 @@ export default function ChatApp() {
                       </div>
                       {feedbackForms[m.id]?.open && (
                         <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 space-y-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-widest text-secondary">
+                            Tell us what went wrong
+                          </div>
                           <div className="flex flex-wrap gap-1.5">
                             {feedbackOptions.map(option => (
                               <button
@@ -664,7 +684,14 @@ export default function ChatApp() {
                               disabled={feedbackForms[m.id]?.pending}
                               className="rounded-md bg-[var(--accent-start)] px-3 py-1.5 text-[10px] font-semibold text-white disabled:opacity-60"
                             >
-                              Submit feedback
+                              {feedbackForms[m.id]?.pending ? 'Saving...' : 'Save needs-work feedback'}
+                            </button>
+                            <button
+                              onClick={() => updateFeedbackForm(m.id, { open: false, error: undefined })}
+                              disabled={feedbackForms[m.id]?.pending}
+                              className="rounded-md border border-[var(--border-default)] px-3 py-1.5 text-[10px] text-secondary hover:text-primary disabled:opacity-60"
+                            >
+                              Cancel
                             </button>
                             {feedbackForms[m.id]?.error && <span className="text-[10px] text-red-500">{feedbackForms[m.id]?.error}</span>}
                           </div>

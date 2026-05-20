@@ -10,7 +10,7 @@ Production-light NYSC assistant built with a Next.js frontend, FastAPI backend, 
 - Retrieval: SQLite FTS5 with lexical scoring fallback
 - Persistence: SQLite database from `DATABASE_URL`
 - LLM providers: Groq, Gemini, OpenRouter, or OpenAI, selected server-side
-- Fallback mode: works without any LLM API key by returning retrieved document sections
+- Fallback mode: works without any LLM API key by returning a source-based answer from retrieved documents
 
 The backend never exposes API keys to the frontend.
 
@@ -118,21 +118,21 @@ Model names can change by provider. If an API returns a model error, update the 
 
 If no API key is configured, or an API call fails, the chatbot remains usable. It returns:
 
-- a fallback notice
-- the top retrieved NYSC document sections
-- source titles, file paths, and URLs where available
+- a short source-based answer
+- practical key points where available
+- source titles and official URLs where available
 
 This keeps the project usable without GPU hosting, paid databases, or paid vector databases.
 
 ## Citations
 
-Every grounded answer includes sources from retrieved chunks. The frontend shows the source title, local file path, snippet, and external URL when available.
+Every grounded answer includes sources from retrieved chunks. The frontend shows source titles and external URLs where available. Internal markdown file paths are kept out of the user-facing chat.
 
 Example:
 
 ```text
 Sources:
-1. NYSC Relocation and Redeployment Guide - rag/relocation/redeployment.md (https://portal.nysc.org.ng)
+1. NYSC Relocation and Redeployment Guide - https://portal.nysc.org.ng
 ```
 
 ## Evaluations
@@ -169,6 +169,17 @@ Recommended low-budget setup:
 - Frontend: Vercel free tier, root directory `web`
 - Backend: Render, Railway, or Fly.io low-cost/free tier
 - Database: SQLite file on the backend instance
+
+For Render, the repo includes `render.yaml`. If configuring manually, use:
+
+```text
+Root Directory: backend
+Build Command: pip install -r requirements.txt
+Start Command: python start.py
+Health Check Path: /health
+```
+
+The backend opens the port first and warms the local RAG index in the background, so Render should not time out while waiting for startup tasks.
 
 SQLite warning: free hosting filesystems can be ephemeral. Back up `nysc_chatbot.db` regularly, or mount persistent storage if your host supports it. Later, the persistence layer can be migrated to PostgreSQL without changing the frontend contract.
 

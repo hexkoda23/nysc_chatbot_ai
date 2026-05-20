@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import time
 from collections import defaultdict, deque
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any, Deque, Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -21,6 +23,7 @@ load_dotenv()
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
 REQUEST_LOG: Dict[str, Deque[float]] = defaultdict(deque)
+logger = logging.getLogger("nysc_chatbot.startup")
 
 
 def check_rate_limit(request: Request) -> None:
@@ -48,11 +51,25 @@ def cors_origins() -> List[str]:
     return configured or defaults
 
 
+async def warm_rag_index() -> None:
+    try:
+        await asyncio.to_thread(ensure_index)
+        logger.info("RAG index is ready.")
+    except Exception:
+        logger.exception("RAG index warm-up failed. It will be retried on the next chat request.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    ensure_index()
-    yield
+    index_task = asyncio.create_task(warm_rag_index())
+    try:
+        yield
+    finally:
+        if not index_task.done():
+            index_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await index_task
 
 
 class Source(BaseModel):
@@ -124,9 +141,23 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+def root() -> Dict[str, Any]:
+    return {
+        "status": "ok",
+        "service": "NYSC AI Assistant API",
+        "health": "/health",
+    }
+
+
 @app.get("/health")
 def health() -> Dict[str, Any]:
     return {"status": "ok", "rag": "local-sqlite-fts"}
+
+
+@app.get("/api/health")
+def api_health() -> Dict[str, Any]:
+    return health()
 
 
 @app.post("/api/reload")
@@ -191,4 +222,3 @@ def feedback(request: Request, payload: FeedbackRequest) -> FeedbackResponse:
 @app.post("/api/translate", response_model=TranslateResponse)
 def translate(req: TranslateRequest) -> TranslateResponse:
     return TranslateResponse(translations=translate_texts(req.texts, req.target_lang, req.source_lang))
-

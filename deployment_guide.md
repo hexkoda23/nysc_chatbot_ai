@@ -15,17 +15,16 @@ NEXT_PUBLIC_API_URL=https://your-backend.example.com
 
 ## Backend on Render, Railway, or Fly.io
 
-Install command:
+Recommended Render settings:
 
-```bash
-pip install -r backend/requirements.txt
+```text
+Root Directory: backend
+Build Command: pip install -r requirements.txt
+Start Command: python start.py
+Health Check Path: /health
 ```
 
-Start command:
-
-```bash
-uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
-```
+The repository also includes `render.yaml` with these defaults. The FastAPI app opens the web port first and warms the local RAG index in the background so Render can detect the service quickly.
 
 Environment variables:
 

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -20,6 +21,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 
 DEFAULT_TOP_K = 5
+INDEX_LOCK = threading.Lock()
 STOPWORDS = {
     "a",
     "an",
@@ -400,12 +402,13 @@ def rebuild_index(docs_path: Optional[Path] = None) -> Dict[str, Any]:
 
 
 def ensure_index() -> None:
-    init_db()
-    with get_db() as conn:
-        row = conn.execute("SELECT COUNT(*) AS count FROM rag_chunks").fetchone()
-        count = int(row["count"] if row else 0)
-    if count == 0:
-        rebuild_index()
+    with INDEX_LOCK:
+        init_db()
+        with get_db() as conn:
+            row = conn.execute("SELECT COUNT(*) AS count FROM rag_chunks").fetchone()
+            count = int(row["count"] if row else 0)
+        if count == 0:
+            rebuild_index()
 
 
 def row_to_chunk(row: sqlite3.Row, score: float = 0.0) -> ChunkRecord:

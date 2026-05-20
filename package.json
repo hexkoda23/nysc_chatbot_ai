@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "index-rag": "python backend/scripts/index_rag.py",
+    "eval": "python backend/scripts/run_evals.py",
+    "backend": "uvicorn backend.app.main:app --reload",
+    "frontend": "npm --prefix web run dev"
+  }
+}

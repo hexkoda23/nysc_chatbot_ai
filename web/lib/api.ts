@@ -11,9 +11,23 @@ export interface ChatMessage {
 
 export interface ChatResponse {
     answer: string;
-    sources: { source: string; snippet: string }[];
+    sources: {
+        source: string;
+        snippet: string;
+        title?: string;
+        filepath?: string;
+        source_url?: string;
+        topic?: string;
+        score?: number;
+    }[];
     detected_language: string;
     detected_language_name: string;
+    message_id?: string;
+    conversation_id?: string;
+    is_fallback?: boolean;
+    provider?: string | null;
+    confidence?: number;
+    low_confidence?: boolean;
 }
 
 export async function sendMessage(
@@ -48,4 +62,18 @@ export async function translateTexts(
 
 export async function reloadCorpus(): Promise<void> {
     await fetch(`${BASE_URL}/api/reload`, { method: "POST" }).catch(() => { });
+}
+
+export async function sendFeedback(payload: {
+    message_id: string;
+    rating: "good" | "bad";
+    comment?: string;
+}): Promise<{ status: string; id: number }> {
+    const res = await fetch(`${BASE_URL}/api/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`Feedback error: ${res.status}`);
+    return res.json();
 }

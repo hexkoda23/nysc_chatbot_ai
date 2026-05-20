@@ -1,29 +1,59 @@
-# Deploying NYSC Chatbot to Vercel
+# Production-light Deployment Guide
 
-Follow these steps to ensure a successful deployment of the frontend.
+## Frontend on Vercel
 
-## 1. Vercel Project Settings
-When you import the repository into Vercel, make sure the following settings are configured:
+1. Import the repo into Vercel.
+2. Set root directory to `web`.
+3. Keep the framework preset as `Next.js`.
+4. Add:
 
-- **Framework Preset**: Select `Next.js`.
-- **Root Directory**: Set this to `web`.
-- **Build Command**: `next build` (should be default).
-- **Output Directory**: Leave as **Default** (it should automatically use `.next`). Do NOT set this to `dist`.
+```env
+NEXT_PUBLIC_API_URL=https://your-backend.example.com
+```
 
-## 2. Environment Variables
-In the Vercel Dashboard, go to **Settings > Environment Variables** and add:
+5. Deploy.
 
-| Variable Name | Value |
-| :--- | :--- |
-| `NEXT_PUBLIC_API_URL` | `https://nysc-chatbot-ai.onrender.com` |
+## Backend on Render, Railway, or Fly.io
 
-## 3. Deploy
-1. Go to the **Deployments** tab.
-2. If the build failed previously, click **Redeploy** on the latest commit.
-3. Vercel will now use the `.env.production` file I created or the environment variables you set in the dashboard.
+Install command:
 
-## 4. Troubleshooting "dist" Error
-If you still see the error message `The Next.js output directory "dist" was not found`:
-1. Go to **Settings > General** in your Vercel project.
-2. Scroll down to **Build & Development Settings**.
-3. Ensure **Output Directory** is **NOT** checked/overridden. It should show `OVERRIDE` as disabled.
+```bash
+pip install -r backend/requirements.txt
+```
+
+Start command:
+
+```bash
+uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Environment variables:
+
+```env
+DATABASE_URL=sqlite:///./nysc_chatbot.db
+RAG_DOCS_PATH=./rag
+LLM_PROVIDER=auto
+GROQ_API_KEY=
+GEMINI_API_KEY=
+OPENROUTER_API_KEY=
+OPENAI_API_KEY=
+CORS_ORIGINS=https://your-vercel-app.vercel.app
+```
+
+## SQLite Persistence Warning
+
+SQLite is low-cost and simple, but many free hosts use ephemeral disks. If the host does not provide persistent storage, conversation history, feedback, and eval results can disappear after redeploys or restarts.
+
+Back up `nysc_chatbot.db` regularly. If usage grows, migrate the persistence layer to managed PostgreSQL while keeping local SQLite FTS for documents or replacing it with PostgreSQL full-text search.
+
+## RAG Refresh
+
+After adding or editing markdown documents:
+
+```bash
+python backend/scripts/index_rag.py
+```
+
+You can also call `POST /api/reload` after deployment.
+
+Docker is not required. Add it only if your host or workflow needs it.

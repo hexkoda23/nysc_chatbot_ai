@@ -1,948 +1,796 @@
-import os
+from __future__ import annotations
+
+import hashlib
 import json
+import os
 import re
+import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
 import httpx
-import asyncio
-from functools import lru_cache
-from typing import List, Dict, Any, Tuple
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from collections import defaultdict
-from datetime import datetime, timedelta
-
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from langchain_core.tools import tool
-from langgraph.prebuilt import create_react_agent
+
+from .database import PROJECT_ROOT, get_db, init_db, utc_now
 
 
-# Load .env from backend directory or project root
-env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
-load_dotenv(dotenv_path=env_path)
-load_dotenv()  # Also try current directory and parent directories
+load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-CURSOR_PROMPT_PATH = os.path.join(PROJECT_ROOT, "NYSC_Cursor_Prompt.md")
-
-def _load_external_prompt() -> str:
-    try:
-        if os.path.exists(CURSOR_PROMPT_PATH):
-            with open(CURSOR_PROMPT_PATH, "r", encoding="utf-8") as f:
-                txt = f.read().strip()
-                return txt
-    except Exception:
-        pass
-    return ""
-
-LANGUAGE_TEMPLATES = {
-    "en": {
-        "officialSource": "Official Source",
-        "followUpPrompt": "You may also want to ask:",
-        "website": "NYSC Website",
-        "portal": "NYSC Portal"
-    },
-    "yo": {
-        "officialSource": "Orísun ìsọfúnni",
-        "followUpPrompt": "Àwọn ìbéèrè míràn tí o lè béèrè:",
-        "website": "Ìkànnì NYSC",
-        "portal": "Ojúewé NYSC"
-    },
-    "ig": {
-        "officialSource": "Isi mmalite ozi",
-        "followUpPrompt": "Ajụjụ ndị ọzọ ị nwere ike jụọ:",
-        "website": "Webụsaịtị NYSC",
-        "portal": "Ọdụ NYSC"
-    },
-    "ha": {
-        "officialSource": "Tushen bayanai",
-        "followUpPrompt": "Sauran tambayoyin da zaka iya yi:",
-        "website": "Gidan yanar gizon NYSC",
-        "portal": "Shafin NYSC"
-    }
+DEFAULT_TOP_K = 5
+STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "can",
+    "do",
+    "does",
+    "for",
+    "from",
+    "how",
+    "i",
+    "if",
+    "in",
+    "is",
+    "it",
+    "my",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "what",
+    "when",
+    "where",
+    "who",
+    "why",
+    "with",
 }
 
-# Official sources and search roots
-NYSC_SOURCES = {
-    "main": "https://www.nysc.gov.ng",
-    "portal": "https://portal.nysc.org.ng",
-    "faq": "https://www.nysc.gov.ng/faq",
-    "mobilization": "https://www.nysc.gov.ng/mobilization",
-    "redeployment": "https://www.nysc.gov.ng/redeployment",
-    "allowance": "https://www.nysc.gov.ng/allowance",
-    "senate_check": "https://portal.nysc.org.ng/nysc2/VerifySenateLists.aspx",
-    "registration": "https://portal.nysc.org.ng/nysc1/",
-    "exclusion": "https://portal.nysc.org.ng/nysc1/ExclusionLetter.aspx",
+SENSITIVE_TERMS = {
+    "medical",
+    "health",
+    "relocation",
+    "redeployment",
+    "payment",
+    "allowance",
+    "portal",
+    "discipline",
+    "legal",
+    "security",
+    "unsafe",
+    "scam",
+    "abscond",
+    "certificate",
+    "clearance",
 }
 
-NYSC_SEARCH_URLS = [
-    "https://www.nysc.gov.ng",
-    "https://portal.nysc.org.ng",
-]
-
-# In-memory conversation history storage (session_id -> list of (user_msg, assistant_msg) tuples)
-# Stores last 10 exchanges per session
-CONVERSATION_HISTORY: Dict[str, List[Tuple[str, str]]] = defaultdict(list)
-MAX_HISTORY_LENGTH = 10  # Keep last 10 exchanges
-
-
-def _normalize_text(t: str) -> str:
-    repl = (
-        ("\u00a0", " "),        # non-breaking space
-        ("â–º", "•"),           # bullet artifact
-        ("Â", ""),              # stray encoding
-        ("â‚¦", "₦"),
-        ("\r", " "),
-    )
-    for a, b in repl:
-        t = t.replace(a, b)
-    t = " ".join(t.split())
-    return t.strip()
+TOPIC_KEYWORDS: Sequence[Tuple[str, Sequence[str]]] = (
+    ("call_up_letter", ("call-up", "call up", "callup", "deployment letter", "reporting date")),
+    ("registration", ("register", "registration", "mobilization", "senate list", "graduation list", "foreign-trained", "date of birth", "name arrangement")),
+    ("camp", ("camp", "orientation", "medical fitness", "pregnant", "nursing mother", "prohibited", "kit")),
+    ("relocation", ("relocation", "redeployment", "relocate", "redeploy", "marital", "married", "security reason", "medical relocation")),
+    ("ppa", ("ppa", "place of primary assignment", "primary assignment", "employer", "rejection")),
+    ("cds", ("cds", "community development", "community service")),
+    ("allowance", ("allowance", "allawee", "stipend", "salary", "bank account", "payment")),
+    ("clearance", ("clearance", "biometric", "abscond", "final clearance")),
+    ("exemption", ("exemption", "exclusion", "above 30", "part-time", "certificate")),
+    ("portal", ("portal", "dashboard", "password", "biometric capture", "passport photograph", "posting online")),
+    ("security", ("scam", "pay someone", "influence", "fraud", "unsafe")),
+    ("saed", ("saed", "skill", "entrepreneurship")),
+)
 
 
-def _infer_topic_from_filename(name: str) -> Tuple[str, str]:
-    n = name.lower()
-    if "allowance" in n or "stipend" in n or "pay" in n:
-        return "allowance", "policy"
-    if "redeploy" in n or "relocat" in n or "transfer" in n:
-        return "redeployment", "process"
-    if "call_up" in n or "callup" in n or "call-up" in n or "call up" in n:
-        return "call_up", "process"
-    if "registration" in n or "register" in n or "enroll" in n:
-        return "registration", "process"
-    if "exemption" in n or "exempt" in n:
-        return "exemption", "policy"
-    if "decree" in n or "act" in n or "law" in n:
-        return "decree", "policy"
-    if "faq" in n or "frequently" in n:
-        return "faq", "faq"
-    if "posting" in n or "placement" in n or "ppa" in n:
-        return "posting", "policy"
-    if "saed" in n or "skill_acqui" in n or "entrepreneurship" in n:
-        return "saed", "guide"
-    if "cds" in n or "community_dev" in n:
-        return "cds", "guide"
-    return "general", "policy"
+@dataclass
+class DocumentRecord:
+    filepath: str
+    title: str
+    source: str
+    source_url: str
+    topic: str
+    last_checked: str
+    official: bool
+    content: str
+    checksum: str
+    metadata: Dict[str, Any]
 
 
-ALLOWED_FILES = {
-    "call_up.md",
-    "corrections.md",
-    "decree.md",
-    "faq.md",
-    "posting.md",
-    "redeployment.md",
-    "registration.md",
-    "safety.md",
-    "nysc_allowance_2024.txt",
-    "nysc_current_information_2024_2025.txt",
-    "nysc_policy_on_sexual_harassment.txt",
-    "nyscdecree.txt",
-    "bye-law pfd_103222.txt",
-}
-def _is_low_quality(filename: str) -> bool:
-    return filename.lower() not in ALLOWED_FILES
+@dataclass
+class ChunkRecord:
+    id: str
+    filepath: str
+    title: str
+    topic: str
+    source_url: str
+    last_checked: str
+    official: bool
+    content: str
+    checksum: str
+    score: float = 0.0
 
-
-@lru_cache(maxsize=1)
-def _load_corpus() -> List[Dict[str, Any]]:
-    """
-    Load and chunk documents from DATA_DIR into a simple corpus suitable for fast local retrieval.
-    Avoids network-bound embeddings for speed and reliability.
-    """
-    docs: List[Any] = _load_documents()
-    corpus: List[Dict[str, Any]] = []
-    for d in docs:
-        text = _normalize_text(d.page_content)
-        if not text:
-            continue
-        corpus.append(
-            {
-                "text": text,
-                "source": d.metadata.get("source", "unknown"),
-                "topic": d.metadata.get("topic", "general"),
-                "doc_type": d.metadata.get("document_type", "policy"),
-            }
-        )
-    return corpus
-
-
-def _simple_retrieve(query: str, k: int = 4) -> List[Dict[str, Any]]:
-    """
-    Very fast local retriever based on token overlap scoring.
-    Good enough for small corpora and sub-5s responses without external services.
-    """
-    q = query.lower()
-    q_tokens = set(t for t in q.replace("\n", " ").split() if len(t) > 2)
-    if not q_tokens:
-        return []
-
-    scored: List[Tuple[float, Dict[str, Any]]] = []
-    q_has_allowance = "allowance" in q or "stipend" in q
-    intent_topic = _classify_intent(q)
-    corpus = _load_corpus()
-    for item in corpus:
-        text_lower = item["text"].lower()
-        text_tokens = set(t for t in text_lower.split() if len(t) > 2)
-        if not text_tokens:
-            continue
-        overlap = len(q_tokens & text_tokens)
-        if overlap == 0:
-            continue
-        score = overlap / (len(q_tokens) + 1e-6)
-        if intent_topic and item.get("topic") == intent_topic:
-            score += 0.5
-        if q_has_allowance and "allowance" in text_lower:
-            score += 0.8
-        if q_has_allowance and ("monthly" in text_lower or "per month" in text_lower):
-            score += 0.4
-        scored.append((score, item))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-    threshold = 0.25
-    filtered = [it for it in scored if it[0] >= threshold]
-    deduped: List[Tuple[float, Dict[str, Any]]] = []
-    seen_topics = set()
-    for sc, it in filtered:
-        topic = it.get("topic") or "general"
-        if topic in seen_topics:
-            continue
-        seen_topics.add(topic)
-        deduped.append((sc, it))
-        if len(deduped) >= 3:
-            break
-    if not deduped and filtered:
-        deduped = filtered[:k]
-    return [it for _, it in deduped]
-
-
-def _web_search_nysc(query: str) -> str:
-    serpapi_key = os.getenv("SERPAPI_KEY")
-    if serpapi_key:
-        try:
-            params = {
-                "q": f"site:nysc.gov.ng OR site:portal.nysc.org.ng {query}",
-                "api_key": serpapi_key,
-                "num": 5,
-                "engine": "google",
-            }
-            resp = httpx.get("https://serpapi.com/search", params=params, timeout=8.0)
-            data = resp.json()
-            results = data.get("organic_results", [])
-            if results:
-                snippets = []
-                for r in results[:4]:
-                    title = r.get("title", "") or ""
-                    snippet = r.get("snippet", "") or ""
-                    link = r.get("link", "") or ""
-                    snippets.append(f"{title}: {snippet} (source: {link})")
-                return "\n".join(snippets)
-        except Exception as e:
-            print(f"[WEB SEARCH] SerpAPI failed: {e}")
-    try:
-        pages_to_try = [
-            NYSC_SOURCES.get("faq", ""),
-            NYSC_SOURCES.get("main", ""),
-        ]
-        for url in pages_to_try:
-            if not url:
-                continue
-            try:
-                r = httpx.get(url, timeout=6.0, headers={"User-Agent": "Mozilla/5.0"})
-                if r.status_code == 200 and r.text:
-                    text = re.sub(r"<[^>]+>", " ", r.text)
-                    text = re.sub(r"\s+", " ", text)
-                    ql = query.lower().split()
-                    anchor = ql[0] if ql else "nysc"
-                    idx = text.lower().find(anchor)
-                    if idx > 0:
-                        return text[max(0, idx - 100) : idx + 1500]
-                    return text[:2000]
-            except Exception:
-                continue
-    except Exception as e:
-        print(f"[WEB SEARCH] Direct fetch failed: {e}")
-    return ""
-
-def _classify_intent(query: str) -> str:
-    q = query.lower()
-    if any(w in q for w in ["allowance", "stipend", "pay", "salary"]):
-        return "allowance"
-    if any(w in q for w in ["redeploy", "redeployment", "relocate", "transfer"]):
-        return "redeployment"
-    if any(w in q for w in ["who owns", "ownership", "established by", "founded by", "who created", "who started"]):
-        return "decree"
-    if any("serve in" in q or "posting" in q or "state of origin" in q for _ in [0]):
-        return "posting"
-    if any(w in q for w in ["register", "registration", "enroll", "apply"]):
-        return "registration"
-    if "call-up" in q or "call up" in q or "callup" in q:
-        return "call_up"
-    if "exemption" in q or "exempt" in q:
-        return "exemption"
-    if "decree" in q or "act" in q or "law" in q:
-        return "decree"
-    if any(w in q for w in ["saed", "skill", "skill acquisition", "entrepreneurship", "craft", "trade", "vocational", "learn skill"]):
-        return "saed"
-    if any(w in q for w in ["cds", "community development", "community service", "cds group", "secondary assignment", "group to join"]):
-        return "cds"
-    return ""
-
-def _extractive_answer(query: str, docs: List[Dict[str, Any]]) -> Dict[str, Any] | None:
-    if not docs:
-        return None
-    q = query.lower()
-    q_tokens = set(t for t in q.replace("\n", " ").split() if len(t) > 2)
-    if not q_tokens:
-        return None
-    bigrams = set()
-    q_words = [w for w in q.replace("\n", " ").split() if len(w) > 2]
-    for i in range(len(q_words) - 1):
-        bigrams.add(q_words[i] + " " + q_words[i + 1])
-    candidates: List[Tuple[float, str, str]] = []
-    is_allowance_q = ("allowance" in q) or ("stipend" in q) or ("how" in q and "much" in q)
-    # currency/amount patterns
-    import re
-    amount_pat = re.compile(r"(₦\s?\d[\d,\.]*|\bN\s?\d[\d,\.]*\b|\bNGN\s?\d[\d,\.]*\b|\b\d[\d,\.]*\s?naira\b)", re.IGNORECASE)
-    sep_pat = re.compile(r"\.\s+")
-    def _header_like(s: str) -> bool:
-        if "====" in s or "----" in s or "____" in s:
-            return True
-        letters = [ch for ch in s if ch.isalpha()]
-        if letters:
-            if sum(1 for ch in letters if ch.isupper()) / max(1, len(letters)) > 0.6 and len(s) > 6:
-                return True
-        if s.strip().endswith(":"):
-            return True
-        return False
-    for d in docs:
-        src = d.get("source", "unknown")
-        text = d.get("text") or d.get("page_content") or ""
-        text = _normalize_text(text)
-        # paragraph-wise splitting then sentence-level
-        paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
-        parts: List[str] = []
-        for para in paragraphs:
-            parts.extend([s.strip() for s in sep_pat.split(para) if s.strip()])
-        for sent in parts:
-            # Skip question headers unless they contain an amount and allowance keyword
-            sent_stripped = sent.strip()
-            if _header_like(sent_stripped):
-                continue
-            tokens = set(t for t in sent.lower().split() if len(t) > 2)
-            if not tokens:
-                continue
-            overlap = len(tokens & q_tokens)
-            if overlap == 0:
-                continue
-            score = overlap / (len(q_tokens) + 1e-6)
-            s_lower = " ".join(sent.lower().split())
-            for bg in bigrams:
-                if bg in s_lower:
-                    score += 0.5
-            if is_allowance_q:
-                has_allow = ("allowance" in s_lower) or ("stipend" in s_lower)
-                has_currency = bool(amount_pat.search(s_lower))
-                if has_allow and has_currency:
-                    score += 1.2
-                if "per month" in s_lower or "monthly" in s_lower:
-                    score += 0.6
-                # If it's clearly a Q header and lacks amount, downweight heavily
-                if (sent_stripped.lower().startswith("q:") or sent_stripped.lower().startswith("question")) and not has_currency:
-                    score -= 1.0
-                # If sentence lacks 'allowance' for an allowance query, downweight
-                if not has_allow:
-                    score -= 0.8
-                # Require a currency amount for allowance queries
-                if not has_currency:
-                    continue
-            candidates.append((score, sent_stripped, src))
-    if not candidates:
-        return None
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    grouped: Dict[str, List[Tuple[float, str]]] = {}
-    for sc, st, sr in candidates:
-        grouped.setdefault(sr, []).append((sc, st))
-    for arr in grouped.values():
-        arr.sort(key=lambda x: x[0], reverse=True)
-    ordered = sorted(grouped.items(), key=lambda kv: kv[1][0][0], reverse=True)
-    selected: List[Tuple[str, str]] = []
-    for src, arr in ordered:
-        for _, st in arr[:2]:
-            selected.append((st, src))
-            if len(selected) >= 3:
-                break
-        if len(selected) >= 3:
-            break
-    # For allowance questions, enforce first sentence includes an amount
-    if is_allowance_q and selected:
-        if not amount_pat.search(selected[0][0].lower()):
-            for idx, (st, src) in enumerate(selected):
-                if amount_pat.search(st.lower()):
-                    # Move this sentence to front
-                    selected.insert(0, selected.pop(idx))
-                    break
-    if not selected:
-        return None
-    direct = selected[0][0]
-    bullets = [s for s, _ in selected[1:]]
-    # Remove any asterisks from extracted text (no markdown emphasis)
-    direct = direct.replace("*", "").strip()
-    bullets = [b.replace("*", "").strip() for b in bullets]
-    parts: List[str] = [direct]
-    # Add up to 3 numbered details, each on its own line
-    if bullets:
-        parts.append("")
-        for i, b in enumerate(bullets[:3], start=1):
-            parts.append(f"{i}. {b}")
-    # Optional follow-up suggestions based on intent (also numbered)
-    intent = _classify_intent(query)
-    suggestions: List[str] = []
-    if intent == "allowance":
-        suggestions = [
-            "Do you want details about when allowances are paid?",
-            "Need clarification on eligibility for monthly payments?",
-        ]
-    elif intent == "redeployment":
-        suggestions = [
-            "Would you like the steps and required documents for redeployment?",
-            "Need to know valid reasons accepted by NYSC?",
-        ]
-    elif intent == "posting":
-        suggestions = [
-            "Do you want guidance on changing your PPA?",
-            "Need clarification on posting outside state of origin?",
-        ]
-    elif intent == "registration":
-        suggestions = [
-            "Do you want the camp registration document checklist?",
-            "Need timelines for call-up and mobilization?",
-        ]
-    if suggestions:
-        parts.append("")
-        parts.append("You may also ask:")
-        for i, s in enumerate(suggestions[:3], start=1):
-            parts.append(f"{i}. {s}")
-    # Append official links section in plain text
-    parts.append("")
-    parts.append("Official Source:")
-    parts.append("NYSC Official Website – https://www.nysc.gov.ng")
-    parts.append("NYSC Portal – https://portal.nysc.gov.ng")
-    answer = "\n".join(parts).strip()
-    sources = [{"source": src, "snippet": s[:200]} for s, src in selected]
-    return {"answer": answer, "sources": sources}
-
-
-def _load_documents() -> List[Any]:
-    """Load NYSC-related documents (TXT, markdown) from the local data directory."""
-    if not os.path.isdir(DATA_DIR):
-        return []
-
-    docs: List[Any] = []
-
-    # Walk the data directory and load .md and .txt files explicitly
-    from langchain_community.document_loaders import TextLoader
-    for root, _, files in os.walk(DATA_DIR):
-        for filename in files:
-            path = os.path.join(root, filename)
-            lower = filename.lower()
-            try:
-                if _is_low_quality(lower):
-                    continue
-                if lower.endswith(".md"):
-                    loader = TextLoader(path, encoding="utf-8", autodetect_encoding=True)
-                    docs.extend(loader.load())
-                elif lower.endswith(".txt"):
-                    loader = TextLoader(path, encoding="utf-8", autodetect_encoding=True)
-                    docs.extend(loader.load())
-            except Exception:
-                # If a single file fails to load, skip it but continue with others
-                continue
-
-    if not docs:
-        return []
-
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=100,
-        separators=["\n\n#", "\n\n", "\n", ". "],
-    )
-    split_docs = splitter.split_documents(docs)
-
-    # Ensure each doc has a simple source field
-    for d in split_docs:
-        src = d.metadata.get("source") or d.metadata.get("file_path") or "local_nysc_docs"
-        base = os.path.basename(src)
-        d.metadata["source"] = base
-        topic, doc_type = _infer_topic_from_filename(base)
-        d.metadata["topic"] = topic
-        d.metadata["document_type"] = doc_type
-    return split_docs
-
-
-@lru_cache(maxsize=1)
-def get_vector_store():
-    """Create (or retrieve cached) in-memory vector store from NYSC documents."""
-    from langchain_openai import OpenAIEmbeddings
-    from langchain_community.vectorstores import DocArrayInMemorySearch
-    docs = _load_documents()
-    if not docs:
-        # Create an empty store to avoid crashes; retrieval will just return no docs.
-        return DocArrayInMemorySearch.from_texts(
-            ["No NYSC documents loaded yet."],
-            embedding=OpenAIEmbeddings(),
-            metadatas=[{"source": "system"}],
-        )
-
-    embeddings = OpenAIEmbeddings()
-    store = DocArrayInMemorySearch.from_documents(docs, embeddings)
-    print(f"Loaded {len(docs)} document chunks into vector store")
-    return store
-
-
-@tool
-def search_local_docs(query: str) -> str:
-    """
-    Search the local NYSC document database for policy information, procedures,
-    registration steps, allowances, redeployment rules, camp info, and guidelines.
-    Always call this first for any NYSC question.
-    """
-    top = _simple_retrieve(query, k=4)
-    if not top:
-        return "No relevant documents found in local database."
-    results = []
-    for i, doc in enumerate(top, 1):
-        results.append(f"[Source {i}: {doc['source']}]\n{doc['text'][:600]}")
-    return "\n\n".join(results)
-
-
-@tool
-def search_nysc_online(query: str) -> str:
-    """
-    Search live NYSC official websites for current, time-sensitive information:
-    current allowance, batch dates, recent policy changes, and portal steps.
-    Always call this after search_local_docs.
-    """
-    web_result = _web_search_nysc(query)
-    if web_result:
-        return "[Live NYSC Web Data]\n" + web_result
-    return "Could not fetch live data. Visit https://www.nysc.gov.ng or https://portal.nysc.org.ng"
-
-
-@tool
-def get_nysc_portal_links(topic: str) -> str:
-    """
-    Return official NYSC portal URLs for a given topic. Topics include:
-    registration, senate_check, redeployment, allowance, exclusion, mobilization, faq.
-    Always include main and portal links.
-    """
-    topic_lower = (topic or "").lower()
-    links: List[str] = []
-    if any(w in topic_lower for w in ["register", "registration", "sign up", "create"]):
-        links.append(f"Registration Portal: {NYSC_SOURCES['registration']}")
-    if any(w in topic_lower for w in ["senate", "list", "verify", "check", "name"]):
-        links.append(f"Senate List Verification: {NYSC_SOURCES['senate_check']}")
-    if any(w in topic_lower for w in ["redeploy", "relocat", "transfer", "move"]):
-        links.append(f"Redeployment Info: {NYSC_SOURCES['redeployment']}")
-    if any(w in topic_lower for w in ["exempt", "exclusion", "exclude", "above 30"]):
-        links.append(f"Exclusion Letter: {NYSC_SOURCES['exclusion']}")
-    if any(w in topic_lower for w in ["allowance", "stipend", "pay", "salary", "money"]):
-        links.append(f"Allowance Info: {NYSC_SOURCES['allowance']}")
-    if any(w in topic_lower for w in ["faq", "question", "help"]):
-        links.append(f"NYSC FAQ: {NYSC_SOURCES['faq']}")
-    links.append(f"NYSC Main Website: {NYSC_SOURCES['main']}")
-    links.append(f"NYSC Portal: {NYSC_SOURCES['portal']}")
-    return "\n".join(links)
-
-
-_llm_cache: Dict[Tuple[float, int, str | None], Any] = {}
-def _make_llm(timeout: float = 10.0, retries: int = 2, model_override: str | None = None):
-    """
-    Create a Chat LLM. If NYSC (Groq) key is present, use Groq OpenAI-compatible API.
-    Otherwise use default OpenAI.
-    """
-    from langchain_openai import ChatOpenAI
-    # Prefer NYSC_API_KEY then FALLBACK to NYSC
-    groq_key = os.getenv("NYSC_API_KEY") or os.getenv("NYSC")
-    
-    # Use explicit override, then Groq model env, then OpenAI model env, then defaults
-    if groq_key:
-        model = model_override or os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-        base_url = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-    else:
-        model = model_override or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        base_url = None # Use default OpenAI base
-
-    cache_key = (timeout, retries, model, base_url)
-    if cache_key in _llm_cache:
-        return _llm_cache[cache_key]
-
-    common_params = {
-        "model": model,
-        "temperature": 0.4,
-        "frequency_penalty": 0.8,
-        "presence_penalty": 0.3,
-        "max_tokens": 1000,
-        "timeout": timeout,
-        "max_retries": retries,
-    }
-
-    if groq_key:
-        common_params["api_key"] = groq_key
-        common_params["base_url"] = base_url
-    
-    llm = ChatOpenAI(**common_params)
-    _llm_cache[cache_key] = llm
-    return llm
-
-
-def get_agent(target_lang: str = "en"):
-    if not (os.getenv("NYSC_API_KEY") or os.getenv("NYSC") or os.getenv("OPENAI_API_KEY")):
-        raise RuntimeError("Set NYSC_API_KEY (Groq), NYSC (Groq), or OPENAI_API_KEY in .env")
-
-    llm = _make_llm(timeout=25.0, retries=1)
-    tools = [search_local_docs, search_nysc_online, get_nysc_portal_links]
-    
-    lang_names = {"yo": "Standard Yorùbá", "ha": "Hausa", "ig": "Igbo", "en": "English"}
-    lang_name = lang_names.get(target_lang, "English")
-    
-    # Load exact target language strings to prevent LLM translation hallucination
-    t_strings = LANGUAGE_TEMPLATES.get(target_lang, LANGUAGE_TEMPLATES["en"])
-    official_source_txt = t_strings["officialSource"]
-    follow_up_txt = t_strings["followUpPrompt"]
-    website_txt = t_strings["website"]
-    portal_txt = t_strings["portal"]
-    
-    if target_lang != "en":
-        lang_instruction = (
-            f"IMPORTANT LANGUAGE INSTRUCTION:\n"
-            f"You MUST write your ENTIRE response natively in {lang_name}. "
-            f"Do NOT write any part of your answer in English. "
-            f"Use EXACTLY these native phrases for the footer sections:\n"
-            f"- For Official Source, use: '{official_source_txt}'\n"
-            f"- For Follow-up questions, use: '{follow_up_txt}'\n"
-            f"- For Website/Portal names, use: '{website_txt}' and '{portal_txt}'"
-        )
-    else:
-        lang_instruction = ""
-
-    system_prompt = (
-        f"You are NYSC AI — a fast, accurate assistant for the Nigerian National Youth Service Corps. "
-        f"You are speaking to the user in {lang_name}.\n\n"
-        "You have THREE tools available.\n\n"
-        "YOUR BEHAVIOR FOR EVERY QUESTION:\n"
-        "1. ALWAYS call search_local_docs first to check the local database\n"
-        "2. ALWAYS call search_nysc_online second to get current live data\n"
-        "3. Call get_nysc_portal_links to attach the right official URL\n"
-        "4. Merge ALL results and write a clean final answer\n\n"
-        "ANSWER FORMAT — always follow this structure:\n"
-        "[Direct answer in 1-2 sentences]\n\n"
-        "[Numbered steps or key details if needed]\n"
-        "1. ...\n2. ...\n3. ...\n\n"
-        "[Official Links section]\n"
-        f"{official_source_txt}:\n"
-        f"- [Relevant specific link from get_nysc_portal_links]\n"
-        f"- {website_txt}: https://www.nysc.gov.ng\n"
-        f"- {portal_txt}: https://portal.nysc.org.ng\n\n"
-        f"{follow_up_txt}\n"
-        "1. [Relevant follow-up question]\n"
-        "2. [Relevant follow-up question]\n\n"
-        f"{lang_instruction}\n\n"
-        "STRICT RULES:\n"
-        "- Answer ONLY the Current Question. Do NOT summarize or repeat previous history.\n"
-        "- DO NOT repeat yourself or any word multiple times. If you see a loop, stop the sentence immediately.\n"
-        f"- Write in professional, formal {lang_name}. Do NOT use informal slang like 'Omo', 'wàhálà', or 'koko' in Yorùbá, or repetitive fillers in Igbo.\n"
-        "- STABILITY: If you detect a token repetition loop in any language (especially Yorùbá or Igbo), terminate the response immediately.\n"
-        "- Each point in a numbered list MUST provide NEW information. Do NOT repeat the same fact in different points.\n"
-        "- Give SPECIFIC information: exact amounts, exact URLs, exact steps.\n"
-        "- Current allowance is N77,000/month (effective March 2025).\n"
-        "- Registration portal: https://portal.nysc.org.ng/nysc1/\n"
-        "- Never say \"I cannot find\" if tools returned results — synthesize them professionally."
-    )
-    external = _load_external_prompt()
-    if external:
-        system_prompt = external + "\n\n" + system_prompt
-    graph = create_react_agent(llm, tools, state_modifier=system_prompt)
-    return graph
-
-
-def _get_conversation_context(session_id: str) -> str:
-    """Get recent conversation history as context string."""
-    history = CONVERSATION_HISTORY.get(session_id, [])
-    if not history:
-        return ""
-    
-    context_parts = []
-    for user_msg, assistant_msg in history[-5:]:  # Last 5 exchanges
-        context_parts.append(f"User: {user_msg}")
-        context_parts.append(f"Assistant: {assistant_msg}")
-    
-    return "\n".join(context_parts)
-
-
-def _update_conversation_history(session_id: str, user_message: str, assistant_message: str):
-    """Update conversation history for a session."""
-    history = CONVERSATION_HISTORY[session_id]
-    history.append((user_message, assistant_message))
-    
-    # Keep only last MAX_HISTORY_LENGTH exchanges
-    if len(history) > MAX_HISTORY_LENGTH:
-        CONVERSATION_HISTORY[session_id] = history[-MAX_HISTORY_LENGTH:]
-
-
-def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Dict[str, Any]:
-    template = _get_template_response(message)
-    if template:
-        _update_conversation_history(session_id, message, template["answer"])
-        return template
-    conversation_context = _get_conversation_context(session_id)
-    full_message = message
-    if conversation_context:
-        full_message = f"Previous conversation:\n{conversation_context}\n\nCurrent question: {message}"
-    def _run_agent():
-        agent = get_agent(target_lang=target_lang)
-        result = agent.invoke({"messages": [HumanMessage(content=full_message)]})
-        msgs = result.get("messages", [])
-        for msg in reversed(msgs):
-            if hasattr(msg, "content") and msg.content:
-                if not getattr(msg, "tool_calls", None):
-                    return msg.content
-        return "I was unable to generate a response. Please try again."
-    executor = ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(_run_agent)
-    try:
-        answer = future.result(timeout=28.0)
-        sources = []
-        url_pattern = re.compile(r'https?://[^\s\)]+')
-        urls = url_pattern.findall(answer)
-        for url in set(urls[:3]):
-            sources.append({"source": url, "snippet": ""})
-        result = {"answer": answer, "sources": sources}
-        _update_conversation_history(session_id, message, answer)
-        return result
-    except FutureTimeoutError:
-        executor.shutdown(wait=False)
-        print("[WARN] Agent timed out — using fast RAG fallback")
-        fallback = _fast_rag_response(message, conversation_context, target_lang=target_lang)
-        _update_conversation_history(session_id, message, fallback["answer"])
-        return fallback
-    except Exception:
-        executor.shutdown(wait=False)
-        import traceback
-        traceback.print_exc()
-        fallback = _fast_rag_response(message, conversation_context, target_lang=target_lang)
-        _update_conversation_history(session_id, message, fallback["answer"])
-        return fallback
-    finally:
-        executor.shutdown(wait=False)
-
-
-def _fast_rag_response(message: str, conversation_context: str = "", target_lang: str = "en") -> Dict[str, Any]:
-    """
-    Fast RAG response using direct retrieval + LLM with conversation context.
-    """
-    lang_names = {"yo": "Standard Yorùbá", "ha": "Hausa", "ig": "Igbo", "en": "English"}
-    lang_name = lang_names.get(target_lang, "English")
-    t_strings = LANGUAGE_TEMPLATES.get(target_lang, LANGUAGE_TEMPLATES["en"])
-    official_source_txt = t_strings["officialSource"]
-    follow_up_txt = t_strings["followUpPrompt"]
-    website_txt = t_strings["website"]
-    portal_txt = t_strings["portal"]
-
-    # Build a language instruction for the follow-up suggestions
-    if target_lang != "en":
-        lang_instruction = (
-            f"IMPORTANT: You MUST write your ENTIRE response natively in {lang_name}. "
-            f"Do NOT write any part of your answer in English. "
-            f"Use EXACTLY these native phrases for the footer sections:\n"
-            f"- '{official_source_txt}'\n"
-            f"- '{follow_up_txt}'"
-        )
-    else:
-        lang_instruction = ""
-
-    docs_raw = _simple_retrieve(message, k=4)
-    if docs_raw:
-        local_context = "\n\n".join([d["text"][:300] for d in docs_raw[:2]])
-        sources_list = [{"source": d["source"], "snippet": d["text"][:200]} for d in docs_raw[:2]]
-    else:
-        local_context = ""
-        sources_list = []
-    web_context = _web_search_nysc(message)
-    SYSTEM_RULES = (
-        "You are NYSC AI — a knowledgeable assistant for the Nigerian National Youth Service Corps (NYSC).\n\n"
-        "STRICT RULES:\n"
-        "1. Answer ONLY the User question at bottom. Do NOT summarize previous history.\n"
-        "2. Use provided context. If not found, say: 'I don't have specific info. Visit `https://www.nysc.gov.ng`'.\n"
-        "3. DO NOT repeat yourself or any word multiple times. If you see a loop, stop the sentence immediately.\n"
-        f"4. Write in formal, professional {lang_name}. No informal slang like 'Omo', 'wàhálà', or 'koko'.\n"
-        "5. STABILITY: If you detect a repetition loop in any language (especially Yorùbá or Igbo), terminate the response immediately.\n"
-        "6. Numbered details MUST be unique. Do NOT repeat the same information across bullets.\n"
-        "7. Structure: direct answer, unique numbered details, official source line.\n"
-        "7. No markdown asterisks, no ALL CAPS.\n"
-        f"7. After answer, write '{follow_up_txt}' with 2 unique relevant questions.\n"
-        f"   {lang_instruction}\n"
-        "8. End with:\n"
-        f"   {official_source_txt}: {website_txt} – `https://www.nysc.gov.ng`  | {portal_txt} – `https://portal.nysc.gov.ng`\n\n"
-        "CRITICAL FACTS:\n"
-        "- NYSC monthly allowance is N77,000 per month (effective March 2025).\n"
-        "- This replaced the previous N33,000 allowance.\n"
-        "- Registration portal: https://portal.nysc.org.ng/nysc1/\n"
-    )
-    ext_rules = _load_external_prompt()
-    if ext_rules:
-        SYSTEM_RULES = ext_rules + "\n\n" + SYSTEM_RULES
-    if conversation_context:
-        prompt = (
-            f"{SYSTEM_RULES}\n\n"
-            f"=== RECENT CONVERSATION ===\n{conversation_context}\n=== END CONVERSATION ===\n\n"
-            f"=== LOCAL CONTEXT ===\n{local_context}\n=== END LOCAL CONTEXT ===\n\n"
-            f"=== LIVE WEB CONTEXT ===\n{web_context[:1200]}\n=== END WEB CONTEXT ===\n\n"
-            f"User question: {message}\n\n"
-            f"Answer:"
-        )
-    else:
-        prompt = (
-            f"{SYSTEM_RULES}\n\n"
-            f"=== LOCAL CONTEXT ===\n{local_context}\n=== END LOCAL CONTEXT ===\n\n"
-            f"=== LIVE WEB CONTEXT ===\n{web_context[:1200]}\n=== END WEB CONTEXT ===\n\n"
-            f"User question: {message}\n\n"
-            f"Answer:"
-        )
-    try:
-        llm = _make_llm(timeout=20.0, retries=0)
-        # Use simple string prompt for direct LLM call
-        response = llm.invoke(prompt)
-        answer = response.content if hasattr(response, 'content') else str(response)
-        return {"answer": answer, "sources": sources_list}
-    except Exception as e:
-        import traceback
-        error_type = type(e).__name__
-        error_msg = str(e)
-        print(f"ERROR in _fast_rag_response ({error_type}): {error_msg}")
-        traceback.print_exc()
-        if "decommissioned" in error_msg.lower() or ("model" in error_msg.lower() and "not" in error_msg.lower()):
-            try:
-                for alt in ["llama-3.1-8b-instant", "mixtral-8x7b-32768"]:
-                    try:
-                        llm_alt = _make_llm(timeout=20.0, retries=0, model_override=alt)
-                        resp = llm_alt.invoke(prompt)
-                        ans = resp.content if hasattr(resp, "content") else str(resp)
-                        return {"answer": ans, "sources": sources_list}
-                    except Exception:
-                        continue
-            except Exception:
-                pass
-        if "401" in error_msg or "authentication" in error_msg.lower() or "api_key" in error_msg.lower():
-            return {"answer": "Authentication failed. Check that NYSC (Groq key) or OPENAI_API_KEY is correct in your .env file.", "sources": []}
-        if "429" in error_msg or "rate_limit" in error_msg.lower():
-            return {"answer": "The AI service is rate-limited. Please wait a moment and try again.", "sources": []}
-        if "connection" in error_msg.lower() or "connect" in error_msg.lower() or "network" in error_msg.lower():
-            if docs_raw:
-                joined = " ".join([t['text'][:300] for t in docs_raw])
-                return {"answer": "From NYSC documents: " + joined, "sources": sources_list}
-            tmpl = _get_template_response(message)
-            if tmpl:
-                return tmpl
-            return {"answer": "There was a network connection issue. Please try again shortly.", "sources": []}
-        if "timeout" in error_msg.lower():
-            if docs_raw:
-                joined = " ".join([t['text'][:300] for t in docs_raw])
-                return {"answer": "From NYSC documents: " + joined, "sources": sources_list}
-            tmpl = _get_template_response(message)
-            if tmpl:
-                return tmpl
-            return {"answer": "The request timed out. Please try a simpler question.", "sources": []}
-        if "api" in error_msg.lower() or "openai" in error_msg.lower():
-            return {"answer": "There was an issue connecting to the AI service. Please check if OPENAI_API_KEY is set correctly in the .env file.", "sources": []}
-        return {"answer": f"I encountered an issue processing your question: {error_msg[:100]}. Please try rephrasing your question.", "sources": []}
-
-
-def _get_template_response(message: str) -> Dict[str, Any]:
-    message_lower = message.lower()
-    greetings = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
-    if message_lower.strip() in greetings or any(message_lower.startswith(g + " ") for g in greetings):
+    def as_source(self) -> Dict[str, Any]:
         return {
-            "answer": "Hello! I’m NYSC AI. How can I help today? I can assist with allowances, redeployment, registration and camp questions based on official NYSC documents.",
+            "source": self.title or self.filepath,
+            "title": self.title,
+            "filepath": self.filepath,
+            "source_url": self.source_url,
+            "topic": self.topic,
+            "last_checked": self.last_checked,
+            "official": self.official,
+            "snippet": self.content[:500],
+            "score": round(self.score, 3),
+        }
+
+
+CONVERSATION_HISTORY: Dict[str, List[Tuple[str, str]]] = {}
+
+
+def get_rag_docs_path() -> Path:
+    raw = os.getenv("RAG_DOCS_PATH", "./rag").strip() or "./rag"
+    path = Path(raw)
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return path
+
+
+def get_top_k() -> int:
+    try:
+        return max(1, min(10, int(os.getenv("TOP_K", str(DEFAULT_TOP_K)))))
+    except ValueError:
+        return DEFAULT_TOP_K
+
+
+def get_min_score() -> float:
+    try:
+        return max(0.0, min(1.0, float(os.getenv("MIN_RETRIEVAL_SCORE", "0.2"))))
+    except ValueError:
+        return 0.2
+
+
+def normalize_text(text: str) -> str:
+    text = text.replace("\ufeff", "").replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\u00a0", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def content_checksum(text: str) -> str:
+    normalized = re.sub(r"\s+", " ", text.strip().lower())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def parse_frontmatter(raw: str) -> Tuple[Dict[str, Any], str, List[str]]:
+    warnings: List[str] = []
+    metadata: Dict[str, Any] = {}
+    text = raw.lstrip()
+    if text.startswith("---"):
+        parts = text.split("---", 2)
+        if len(parts) >= 3:
+            fm = parts[1]
+            body = parts[2]
+            for line in fm.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or ":" not in line:
+                    continue
+                key, value = line.split(":", 1)
+                clean = value.strip().strip('"').strip("'")
+                if clean.lower() == "true":
+                    metadata[key.strip()] = True
+                elif clean.lower() == "false":
+                    metadata[key.strip()] = False
+                else:
+                    metadata[key.strip()] = clean
+            return metadata, body.strip(), warnings
+
+    warnings.append("missing frontmatter")
+    return metadata, raw, warnings
+
+
+def infer_topic(text: str) -> str:
+    q = text.lower()
+    if "registration" in q and any(word in q for word in ("closed", "closing", "deadline", "open", "opened")):
+        return "portal"
+    for topic, keywords in TOPIC_KEYWORDS:
+        if any(keyword in q for keyword in keywords):
+            return topic
+    return "faq"
+
+
+def tokenize(text: str) -> List[str]:
+    words = re.findall(r"[a-zA-Z0-9]+", text.lower())
+    return [w for w in words if len(w) > 1 and w not in STOPWORDS]
+
+
+def build_fts_query(question: str) -> str:
+    terms = []
+    seen = set()
+    for token in tokenize(question):
+        if token in seen:
+            continue
+        seen.add(token)
+        terms.append(f"{token}*" if len(token) > 3 else token)
+        if len(terms) >= 12:
+            break
+    return " OR ".join(terms)
+
+
+def split_markdown(content: str, chunk_size: int = 900, overlap: int = 0) -> List[str]:
+    content = normalize_text(re.sub(r"^---.*?---", "", content, flags=re.DOTALL))
+    if not content:
+        return []
+
+    sections = re.split(r"(?=^#{1,3}\s+)", content, flags=re.MULTILINE)
+    chunks: List[str] = []
+    current = ""
+
+    def flush() -> None:
+        nonlocal current
+        clean = normalize_text(current)
+        if clean:
+            chunks.append(clean)
+        current = ""
+
+    for section in sections:
+        section = normalize_text(section)
+        if not section:
+            continue
+        if len(section) > chunk_size:
+            paragraphs = [p.strip() for p in section.split("\n\n") if p.strip()]
+        else:
+            paragraphs = [section]
+
+        for para in paragraphs:
+            if len(para) > chunk_size:
+                sentences = re.split(r"(?<=[.!?])\s+", para)
+            else:
+                sentences = [para]
+
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                if current and len(current) + len(sentence) + 2 > chunk_size:
+                    flush()
+                    if chunks and overlap:
+                        tail = chunks[-1][-overlap:]
+                        current = tail + "\n\n"
+                current += sentence + "\n\n"
+    flush()
+
+    deduped: List[str] = []
+    seen = set()
+    for chunk in chunks:
+        checksum = content_checksum(chunk)
+        if checksum in seen or len(chunk.strip()) < 40:
+            continue
+        seen.add(checksum)
+        deduped.append(chunk)
+    return deduped
+
+
+def load_markdown_documents(docs_path: Optional[Path] = None) -> Tuple[List[DocumentRecord], List[str]]:
+    root = docs_path or get_rag_docs_path()
+    warnings: List[str] = []
+    documents: List[DocumentRecord] = []
+    if not root.exists():
+        warnings.append(f"RAG docs path does not exist: {root}")
+        return documents, warnings
+
+    required = ("title", "source", "source_url", "topic", "last_checked", "official")
+    for path in sorted(root.rglob("*.md")):
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        metadata, body, fm_warnings = parse_frontmatter(raw)
+        relpath = path.relative_to(PROJECT_ROOT).as_posix()
+        for warning in fm_warnings:
+            warnings.append(f"{relpath}: {warning}")
+        missing = [key for key in required if key not in metadata or metadata.get(key) in ("", None)]
+        if missing:
+            warnings.append(f"{relpath}: missing metadata: {', '.join(missing)}")
+
+        content = normalize_text(body)
+        if not content:
+            warnings.append(f"{relpath}: empty document body")
+            continue
+
+        documents.append(
+            DocumentRecord(
+                filepath=relpath,
+                title=str(metadata.get("title") or path.stem.replace("-", " ").title()),
+                source=str(metadata.get("source") or "Local NYSC knowledge base"),
+                source_url=str(metadata.get("source_url") or ""),
+                topic=str(metadata.get("topic") or infer_topic(path.as_posix())),
+                last_checked=str(metadata.get("last_checked") or ""),
+                official=bool(metadata.get("official", False)),
+                content=content,
+                checksum=content_checksum(content),
+                metadata=metadata,
+            )
+        )
+    return documents, warnings
+
+
+def rebuild_index(docs_path: Optional[Path] = None) -> Dict[str, Any]:
+    init_db()
+    documents, warnings = load_markdown_documents(docs_path)
+    duplicate_chunks = 0
+    chunk_count = 0
+    now = utc_now()
+
+    with get_db() as conn:
+        conn.execute("DELETE FROM rag_chunks")
+        conn.execute("DELETE FROM documents")
+        try:
+            conn.execute("DELETE FROM rag_chunks_fts")
+        except sqlite3.OperationalError:
+            pass
+
+        seen_chunk_checksums = set()
+        for doc in documents:
+            cur = conn.execute(
+                """
+                INSERT INTO documents
+                    (filepath, title, topic, source_url, last_checked, official, checksum, indexed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    doc.filepath,
+                    doc.title,
+                    doc.topic,
+                    doc.source_url,
+                    doc.last_checked,
+                    1 if doc.official else 0,
+                    doc.checksum,
+                    now,
+                ),
+            )
+            document_id = int(cur.lastrowid)
+            for idx, chunk in enumerate(split_markdown(doc.content)):
+                checksum = content_checksum(chunk)
+                if checksum in seen_chunk_checksums:
+                    duplicate_chunks += 1
+                    continue
+                seen_chunk_checksums.add(checksum)
+                chunk_id = hashlib.sha1(f"{doc.filepath}:{idx}:{checksum}".encode("utf-8")).hexdigest()
+                metadata_json = json.dumps(doc.metadata, ensure_ascii=False)
+                conn.execute(
+                    """
+                    INSERT INTO rag_chunks
+                        (id, document_id, chunk_index, content, title, topic, filepath,
+                         source_url, last_checked, official, checksum, metadata_json, indexed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        chunk_id,
+                        document_id,
+                        idx,
+                        chunk,
+                        doc.title,
+                        doc.topic,
+                        doc.filepath,
+                        doc.source_url,
+                        doc.last_checked,
+                        1 if doc.official else 0,
+                        checksum,
+                        metadata_json,
+                        now,
+                    ),
+                )
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO rag_chunks_fts (chunk_id, content, title, topic, filepath)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (chunk_id, chunk, doc.title, doc.topic, doc.filepath),
+                    )
+                except sqlite3.OperationalError:
+                    pass
+                chunk_count += 1
+
+    return {
+        "documents": len(documents),
+        "chunks": chunk_count,
+        "duplicates": duplicate_chunks,
+        "warnings": warnings,
+    }
+
+
+def ensure_index() -> None:
+    init_db()
+    with get_db() as conn:
+        row = conn.execute("SELECT COUNT(*) AS count FROM rag_chunks").fetchone()
+        count = int(row["count"] if row else 0)
+    if count == 0:
+        rebuild_index()
+
+
+def row_to_chunk(row: sqlite3.Row, score: float = 0.0) -> ChunkRecord:
+    return ChunkRecord(
+        id=row["id"],
+        filepath=row["filepath"],
+        title=row["title"] or row["filepath"],
+        topic=row["topic"] or "faq",
+        source_url=row["source_url"] or "",
+        last_checked=row["last_checked"] or "",
+        official=bool(row["official"]),
+        content=row["content"],
+        checksum=row["checksum"],
+        score=score,
+    )
+
+
+def lexical_score(question: str, chunk: ChunkRecord, topic_hint: Optional[str]) -> float:
+    q_tokens = set(tokenize(question))
+    if not q_tokens:
+        return 0.0
+    content_tokens = set(tokenize(chunk.content))
+    overlap = len(q_tokens & content_tokens)
+    score = overlap / max(1, len(q_tokens))
+
+    q_lower = question.lower()
+    c_lower = chunk.content.lower()
+    if len(q_lower) > 8 and q_lower in c_lower:
+        score += 0.25
+    for phrase in ("date of birth", "senate list", "call-up", "call up", "monthly clearance", "medical fitness", "bank account"):
+        if phrase in q_lower and phrase in c_lower:
+            score += 0.18
+    if topic_hint and chunk.topic == topic_hint:
+        score += 0.25
+    if chunk.official:
+        score += 0.03
+    return min(score, 1.0)
+
+
+def fetch_chunks_by_ids(conn: sqlite3.Connection, ids: Sequence[str]) -> List[sqlite3.Row]:
+    if not ids:
+        return []
+    placeholders = ",".join("?" for _ in ids)
+    rows = conn.execute(f"SELECT * FROM rag_chunks WHERE id IN ({placeholders})", tuple(ids)).fetchall()
+    by_id = {row["id"]: row for row in rows}
+    return [by_id[i] for i in ids if i in by_id]
+
+
+def retrieve_chunks(question: str, top_k: Optional[int] = None, topic: Optional[str] = None) -> List[ChunkRecord]:
+    ensure_index()
+    top_k = top_k or get_top_k()
+    topic_hint = topic or infer_topic(question)
+    fts_query = build_fts_query(question)
+    candidates: List[ChunkRecord] = []
+
+    with get_db() as conn:
+        rows: List[sqlite3.Row] = []
+        if fts_query:
+            try:
+                fts_rows = conn.execute(
+                    """
+                    SELECT chunk_id
+                    FROM rag_chunks_fts
+                    WHERE rag_chunks_fts MATCH ?
+                    ORDER BY bm25(rag_chunks_fts)
+                    LIMIT 40
+                    """,
+                    (fts_query,),
+                ).fetchall()
+                rows = fetch_chunks_by_ids(conn, [r["chunk_id"] for r in fts_rows])
+            except sqlite3.OperationalError:
+                rows = []
+
+        if not rows:
+            rows = conn.execute("SELECT * FROM rag_chunks LIMIT 1000").fetchall()
+
+    for row in rows:
+        chunk = row_to_chunk(row)
+        if topic and chunk.topic != topic:
+            continue
+        chunk.score = lexical_score(question, chunk, topic_hint)
+        if chunk.score > 0:
+            candidates.append(chunk)
+
+    candidates.sort(key=lambda c: c.score, reverse=True)
+    min_score = get_min_score()
+    filtered = [c for c in candidates if c.score >= min_score]
+    if not filtered and candidates:
+        filtered = candidates[: min(3, top_k)]
+
+    deduped: List[ChunkRecord] = []
+    seen = set()
+    for chunk in filtered:
+        signature = content_checksum(chunk.content[:700])
+        if signature in seen:
+            continue
+        seen.add(signature)
+        deduped.append(chunk)
+        if len(deduped) >= top_k:
+            break
+    return deduped
+
+
+def is_sensitive_question(question: str) -> bool:
+    q = question.lower()
+    return any(term in q for term in SENSITIVE_TERMS)
+
+
+def format_sources(chunks: Sequence[ChunkRecord]) -> str:
+    lines = ["Sources:"]
+    seen = set()
+    index = 1
+    for chunk in chunks:
+        key = (chunk.title, chunk.filepath)
+        if key in seen:
+            continue
+        seen.add(key)
+        url = f" ({chunk.source_url})" if chunk.source_url else ""
+        lines.append(f"{index}. {chunk.title} - {chunk.filepath}{url}")
+        index += 1
+    return "\n".join(lines)
+
+
+SYSTEM_PROMPT = """You are an NYSC assistant for Nigerian corps members. Answer only using the provided NYSC context. If the context does not contain enough information, say you cannot confirm from the available documents. Do not invent rules, dates, fees, portal instructions, or relocation requirements. Always include source references from the retrieved documents. Use simple Nigerian English. Be helpful, clear, and practical."""
+
+
+def build_grounded_prompt(question: str, chunks: Sequence[ChunkRecord], target_lang: str = "en") -> Tuple[str, str]:
+    language_note = {
+        "yo": "Write the answer in clear Yoruba while keeping official terms like NYSC, PPA, CDS and portal names unchanged.",
+        "ig": "Write the answer in clear Igbo while keeping official terms like NYSC, PPA, CDS and portal names unchanged.",
+        "ha": "Write the answer in clear Hausa while keeping official terms like NYSC, PPA, CDS and portal names unchanged.",
+    }.get(target_lang, "Write the answer in simple Nigerian English.")
+
+    context_blocks = []
+    for i, chunk in enumerate(chunks, start=1):
+        context_blocks.append(
+            "\n".join(
+                [
+                    f"[Source {i}] {chunk.title}",
+                    f"File: {chunk.filepath}",
+                    f"Topic: {chunk.topic}",
+                    f"Last checked: {chunk.last_checked or 'not stated'}",
+                    f"URL: {chunk.source_url or 'not stated'}",
+                    "Context:",
+                    chunk.content,
+                ]
+            )
+        )
+
+    user_prompt = f"""Question: {question}
+
+{language_note}
+
+Retrieved NYSC context:
+{chr(10).join(context_blocks)}
+
+Required answer structure:
+- Direct answer
+- Steps or key points if applicable
+- Caution or uncertainty if needed
+- Sources used, matching the source numbers above
+
+If the retrieved context is not enough, say so plainly and do not guess."""
+    return SYSTEM_PROMPT, user_prompt
+
+
+def select_provider() -> Optional[str]:
+    requested = os.getenv("LLM_PROVIDER", "auto").strip().lower()
+    providers = {
+        "groq": os.getenv("GROQ_API_KEY"),
+        "gemini": os.getenv("GEMINI_API_KEY"),
+        "openrouter": os.getenv("OPENROUTER_API_KEY"),
+        "openai": os.getenv("OPENAI_API_KEY"),
+    }
+    if requested in providers:
+        return requested if providers[requested] else None
+    for provider in ("groq", "gemini", "openrouter", "openai"):
+        if providers[provider]:
+            return provider
+    return None
+
+
+def call_openai_compatible(
+    *,
+    provider: str,
+    api_key: str,
+    base_url: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+) -> str:
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    if provider == "openrouter":
+        headers["HTTP-Referer"] = os.getenv("OPENROUTER_SITE_URL", "http://localhost:5180")
+        headers["X-Title"] = "NYSC Chatbot AI"
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.1,
+        "max_tokens": 900,
+    }
+    with httpx.Client(timeout=25.0) as client:
+        response = client.post(f"{base_url.rstrip('/')}/chat/completions", headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json()
+    return data["choices"][0]["message"]["content"].strip()
+
+
+def call_gemini(api_key: str, system_prompt: str, user_prompt: str) -> str:
+    model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    payload = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 900},
+    }
+    with httpx.Client(timeout=25.0) as client:
+        response = client.post(url, params={"key": api_key}, json=payload)
+        response.raise_for_status()
+        data = response.json()
+    parts = data["candidates"][0]["content"].get("parts", [])
+    return "\n".join(part.get("text", "") for part in parts).strip()
+
+
+def generate_with_llm(question: str, chunks: Sequence[ChunkRecord], target_lang: str = "en") -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    provider = select_provider()
+    if not provider:
+        return None, None, "No LLM API key configured"
+
+    system_prompt, user_prompt = build_grounded_prompt(question, chunks, target_lang)
+    try:
+        if provider == "groq":
+            answer = call_openai_compatible(
+                provider=provider,
+                api_key=os.environ["GROQ_API_KEY"],
+                base_url=os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1"),
+                model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+            )
+        elif provider == "openrouter":
+            answer = call_openai_compatible(
+                provider=provider,
+                api_key=os.environ["OPENROUTER_API_KEY"],
+                base_url=os.getenv("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1"),
+                model=os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct:free"),
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+            )
+        elif provider == "openai":
+            answer = call_openai_compatible(
+                provider=provider,
+                api_key=os.environ["OPENAI_API_KEY"],
+                base_url=os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1"),
+                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+            )
+        else:
+            answer = call_gemini(os.environ["GEMINI_API_KEY"], system_prompt, user_prompt)
+        return answer, provider, None
+    except Exception as exc:
+        return None, provider, f"{type(exc).__name__}: {str(exc)[:200]}"
+
+
+def fallback_answer(chunks: Sequence[ChunkRecord]) -> str:
+    if not chunks:
+        return "I could not find this in the available NYSC documents."
+
+    lines = [
+        "I could not generate a full AI answer right now, but I found these relevant NYSC document sections.",
+        "",
+    ]
+    for i, chunk in enumerate(chunks[:5], start=1):
+        snippet = re.sub(r"\s+", " ", chunk.content).strip()
+        if len(snippet) > 550:
+            snippet = snippet[:547].rstrip() + "..."
+        lines.append(f"{i}. {chunk.title} ({chunk.filepath})")
+        lines.append(snippet)
+        lines.append("")
+    lines.append(format_sources(chunks[:5]))
+    return "\n".join(lines).strip()
+
+
+def append_caution(answer: str, question: str) -> str:
+    if is_sensitive_question(question):
+        caution = "Please confirm critical issues with the official NYSC portal or your state secretariat."
+        if caution.lower() not in answer.lower():
+            return f"{answer.rstrip()}\n\nCaution: {caution}"
+    return answer
+
+
+def append_sources_if_missing(answer: str, chunks: Sequence[ChunkRecord]) -> str:
+    if not chunks:
+        return answer
+    if "sources:" in answer.lower():
+        return answer
+    return f"{answer.rstrip()}\n\n{format_sources(chunks)}"
+
+
+def _get_template_response(message: str) -> Optional[Dict[str, Any]]:
+    text = message.strip().lower()
+    greetings = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
+    if text in greetings:
+        return {
+            "answer": (
+                "Hello. I can help with NYSC questions using the available local documents. "
+                "Ask about registration, camp, relocation, PPA, CDS, allowance, clearance, exemption, portal issues, or safety."
+            ),
             "sources": [],
+            "is_fallback": False,
+            "provider": None,
+            "confidence": 1.0,
+            "low_confidence": False,
         }
     return None
 
 
-def _fast_fallback_response(message: str, conversation_context: str = "") -> Dict[str, Any]:
-    """
-    Fast fallback when timeout occurs - try template first, then minimal retrieval.
-    """
-    # Try template-based response first (fastest)
-    template_response = _get_template_response(message)
-    if template_response:
-        print("Using template response for common question")
-        return template_response
-    
-    try:
-        # Minimal retrieval using local corpus (no external embeddings)
-        docs_raw = _simple_retrieve(message, k=4)
-        if not docs_raw:
-            return {
-                "answer": "I couldn't find relevant information. Please try rephrasing your question.",
-                "sources": [],
-            }
-        # Try extractive answer first for speed
-        extractive = _extractive_answer(message, docs_raw)
-        if extractive:
-            return extractive
-        # If needed, do a short LLM pass with local context only
-        docs = [{"page_content": d["text"], "metadata": {"source": d["source"]}} for d in docs_raw]
-        context = "\n\n".join([d["page_content"][:300] for d in docs])
-        sources_list = [{"source": d["metadata"].get("source", "unknown"), "snippet": d["page_content"][:200]} for d in docs]
-        system_rules = (
-            "You are NYSC AI — a helpful and professional assistant focused strictly on NYSC information.\n"
-            "Rules:\n"
-            "- Use ONLY the provided context; if not found, reply exactly: \"I cannot find this information in official NYSC documents.\" \n"
-            "- Start with a clear, direct answer in 1–3 sentences.\n"
-            "- Do NOT copy raw document formatting or headers; avoid \"====\" and similar.\n"
-            "- Do NOT use all caps; summarize naturally in short paragraphs.\n"
-            "- Do NOT use markdown emphasis, asterisks, or decorative characters; write plain text.\n"
-            "- Use clean lists with numbering (1., 2., 3.), each item on its own line when helpful.\n"
-            "- When relevant, add an 'Official Source:' section at the end with:\n"
-            "  NYSC Official Website – https://www.nysc.gov.ng\n"
-            "  NYSC Portal – https://portal.nysc.gov.ng\n"
-            "- After answering, you may offer 2–3 brief, helpful follow-up suggestions.\n"
-            "- Never paste entire documents; if information is unclear, say so without guessing.\n"
-            "- If the answer would be longer than ~6 lines, give a short summary first, then offer more details.\n"
-        )
-        ext_rules2 = _load_external_prompt()
-        if ext_rules2:
-            system_rules = ext_rules2 + "\n\n" + system_rules
-        prompt = f"""{system_rules}
+def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Dict[str, Any]:
+    question = normalize_text(message)[:2000]
+    template = _get_template_response(question)
+    if template:
+        return template
 
-{context}
+    chunks = retrieve_chunks(question, top_k=get_top_k())
+    sources = [chunk.as_source() for chunk in chunks]
+    best_score = max((chunk.score for chunk in chunks), default=0.0)
+    low_confidence = best_score < get_min_score()
 
-Q: {message}
-A:"""
-        llm = _make_llm(timeout=8.0, retries=0)
-        response = llm.invoke(prompt)
-        answer = response.content if hasattr(response, 'content') else str(response)
-        return {"answer": answer, "sources": sources_list}
-    except Exception as e:
-        import traceback
-        error_msg = str(e)
-        print(f"ERROR in _fast_fallback_response: {error_msg}")
-        traceback.print_exc()
-        
-        # If even fallback fails, try template one more time
-        template_response = _get_template_response(message)
-        if template_response:
-            return template_response
-        
-        if "timeout" in error_msg.lower():
-            return {
-                "answer": "I'm experiencing connection issues with the AI service. Here's information compiled directly from NYSC documents.",
-                "sources": [],
-            }
-        
+    if not chunks:
+        answer = "I could not find this in the available NYSC documents."
+        answer = append_caution(answer, question)
         return {
-            "answer": f"I encountered an issue: {error_msg[:100]}. Please try rephrasing your question or check the backend logs.",
+            "answer": answer,
             "sources": [],
+            "is_fallback": True,
+            "provider": None,
+            "confidence": 0.0,
+            "low_confidence": True,
         }
+
+    if low_confidence:
+        answer = (
+            "I found only weak matches in the available NYSC documents, so I cannot answer confidently.\n\n"
+            f"{fallback_answer(chunks[:3])}"
+        )
+        answer = append_caution(answer, question)
+        return {
+            "answer": answer,
+            "sources": sources,
+            "is_fallback": True,
+            "provider": None,
+            "confidence": round(best_score, 3),
+            "low_confidence": True,
+        }
+
+    llm_answer, provider, error = generate_with_llm(question, chunks, target_lang)
+    if llm_answer:
+        answer = append_sources_if_missing(llm_answer, chunks)
+        answer = append_caution(answer, question)
+        return {
+            "answer": answer,
+            "sources": sources,
+            "is_fallback": False,
+            "provider": provider,
+            "confidence": round(best_score, 3),
+            "low_confidence": False,
+        }
+
+    answer = fallback_answer(chunks)
+    if error:
+        answer = f"{answer}\n\nAI provider note: {error}"
+    answer = append_caution(answer, question)
+    return {
+        "answer": answer,
+        "sources": sources,
+        "is_fallback": True,
+        "provider": provider,
+        "confidence": round(best_score, 3),
+        "low_confidence": False,
+    }
+
+
+def search_local_docs(query: str, k: int = 5) -> List[Dict[str, Any]]:
+    return [chunk.as_source() for chunk in retrieve_chunks(query, top_k=k)]

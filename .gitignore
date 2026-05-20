@@ -37,6 +37,13 @@ share/python-wheels/
 .installed.cfg
 *.egg
 
+# Local runtime data
+*.db
+*.db-shm
+*.db-wal
+evals/eval_results_latest.json
+.runtime/
+
 # Virtual environments
 venv/
 .venv/

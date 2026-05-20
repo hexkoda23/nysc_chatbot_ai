@@ -5,16 +5,27 @@ import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Mic, Send, Plus, LogOut, Settings, Search,
-  Globe, ChevronDown, X, Menu
+  Globe, ChevronDown, X, Menu, ThumbsUp, ThumbsDown, ExternalLink, FileText
 } from 'lucide-react'
 import { useI18n } from '@/components/i18n'
 import Image from 'next/image'
-import { sendMessage, reloadCorpus, translateTexts, BASE_URL } from '../../lib/api'
+import { sendMessage, reloadCorpus, translateTexts, sendFeedback } from '../../lib/api'
 import { generateSessionId } from '../../lib/utils'
 
-type Source = { source: string; snippet: string }
-type Msg = { id: string; role: 'user' | 'assistant'; content: string; sources?: Source[]; langName?: string; langCode?: string }
+type Source = { source: string; snippet: string; title?: string; filepath?: string; source_url?: string; topic?: string; score?: number }
+type Msg = {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  sources?: Source[]
+  langName?: string
+  langCode?: string
+  backendMessageId?: string
+  isFallback?: boolean
+  lowConfidence?: boolean
+}
 type Chat = { id: string; title: string; msgs: Msg[]; langCode?: string }
+type FeedbackForm = { open?: boolean; category?: string; comment?: string; sent?: 'good' | 'bad'; error?: string; pending?: boolean }
 
 const STORAGE_KEY = 'nysc_chats'
 const isGreeting = (t: string) => {
@@ -54,11 +65,12 @@ export default function ChatApp() {
   const listRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [selectedLang, setSelectedLang] = useState<'auto' | 'en' | 'yo' | 'ig' | 'ha'>('auto')
-  const sessionIdRef = useRef<string>(undefined)
+  const sessionIdRef = useRef<string | undefined>(undefined)
   if (!sessionIdRef.current) sessionIdRef.current = generateSessionId()
   const ANON_LIMIT = 5
   const [anonQuestionCount, setAnonQuestionCount] = useState(0)
   const [showLoginGate, setShowLoginGate] = useState(false)
+  const [feedbackForms, setFeedbackForms] = useState<Record<string, FeedbackForm>>({})
 
   const renderContent = (text: string) => {
     const parts = text.split(/(https?:\/\/[^\s]+)/g)
@@ -68,6 +80,27 @@ export default function ChatApp() {
         return <a key={i} href={clean} target="_blank" rel="noopener noreferrer" className="underline text-[var(--accent-end)] break-all">{clean}</a>
       return <span key={i}>{p}</span>
     })
+  }
+
+  const feedbackOptions = ['wrong answer', 'outdated info', 'not enough detail', 'no source', 'other']
+
+  const updateFeedbackForm = (messageId: string, patch: FeedbackForm) => {
+    setFeedbackForms(prev => ({ ...prev, [messageId]: { ...(prev[messageId] || {}), ...patch } }))
+  }
+
+  const submitFeedback = async (message: Msg, rating: 'good' | 'bad') => {
+    if (!message.backendMessageId) return
+    const form = feedbackForms[message.id] || {}
+    const reason = rating === 'bad'
+      ? [form.category, form.comment].filter(Boolean).join(': ')
+      : form.comment
+    updateFeedbackForm(message.id, { pending: true, error: undefined })
+    try {
+      await sendFeedback({ message_id: message.backendMessageId, rating, comment: reason })
+      updateFeedbackForm(message.id, { sent: rating, pending: false, open: false })
+    } catch {
+      updateFeedbackForm(message.id, { pending: false, error: 'Could not save feedback.' })
+    }
   }
 
   const filteredChats = query ? chats.filter(c => c.title.toLowerCase().includes(query.toLowerCase())) : chats
@@ -222,14 +255,24 @@ export default function ChatApp() {
     try {
       const data = await sendMessage({ session_id: sessionIdRef.current!, message: text, selectedLang: selectedLang === 'auto' ? '' : selectedLang })
       const aiId = generateSessionId()
-      const ai: Msg = { id: aiId, role: 'assistant', content: '', langName: data.detected_language_name, langCode: uiLang }
+      const ai: Msg = {
+        id: aiId,
+        role: 'assistant',
+        content: '',
+        langName: data.detected_language_name,
+        langCode: uiLang,
+        backendMessageId: data.message_id,
+        isFallback: Boolean(data.is_fallback),
+        lowConfidence: Boolean(data.low_confidence),
+      }
       appendMsg(ai, targetId)
       typeOut(String(data.answer || ''), targetId, aiId, data.sources || [])
       return
     } catch {
-      const ai: Msg = { id: generateSessionId(), role: 'assistant', content: `No network. Please check your connection and try again.`, langCode: uiLang }
+      const ai: Msg = { id: generateSessionId(), role: 'assistant', content: `I could not reach the NYSC assistant backend. Please check your connection and try again.`, langCode: uiLang, isFallback: true }
       appendMsg(ai, targetId)
-    } finally { setLoading(false) }
+      setLoading(false)
+    }
   }
 
   const Sidebar = ({ inDrawer = false }: { inDrawer?: boolean }) => (
@@ -239,7 +282,7 @@ export default function ChatApp() {
         <Image src="/NYSC-Nigeria-Logo.png" alt="NYSC" width={32} height={32} className="rounded-full" />
         <div>
           <div className="font-display text-sm text-primary leading-tight">NYSC AI</div>
-          <div className="text-[10px] text-secondary">Official Assistant</div>
+          <div className="text-[10px] text-secondary">Document Assistant</div>
         </div>
         {inDrawer && <button onClick={() => setSidebarOpen(false)} className="ml-auto text-secondary hover:text-primary"><X className="w-4 h-4" /></button>}
       </div>
@@ -397,6 +440,10 @@ export default function ChatApp() {
           </div>
         )}
 
+        <div className="px-4 py-2 border-b border-[var(--border-default)] bg-[var(--bg-secondary)] text-[11px] text-secondary">
+          Answers are based on available NYSC documents. Always confirm critical issues with official NYSC channels.
+        </div>
+
         {/* Messages */}
         <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
           {/* Empty state */}
@@ -450,14 +497,94 @@ export default function ChatApp() {
                   >
                     {renderContent(m.content)}
                   </div>
-                  {/* Source pills */}
+                  {m.role === 'assistant' && m.isFallback && (
+                    <div className="text-[10px] text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+                      Source-based fallback answer. The AI provider was unavailable or confidence was low.
+                    </div>
+                  )}
                   {m.sources && m.sources.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {m.sources.map((s, si) => (
-                        <span key={si} className="text-[10px] border border-[var(--border-default)] bg-[var(--bg-primary)] text-secondary px-2 py-0.5 rounded-full">
-                          📄 {s.source}
-                        </span>
-                      ))}
+                    <div className="mt-1 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] overflow-hidden">
+                      <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-secondary border-b border-[var(--border-default)]">
+                        Sources
+                      </div>
+                      <div className="divide-y divide-[var(--border-default)]">
+                        {m.sources.slice(0, 5).map((s, si) => {
+                          const label = s.title || s.source
+                          const body = s.filepath || s.source
+                          const sourceUrl = s.source_url
+                          return (
+                            <div key={`${body}-${si}`} className="px-3 py-2 text-xs">
+                              <div className="flex items-start gap-2">
+                                <FileText className="w-3.5 h-3.5 mt-0.5 text-[var(--accent-start)] flex-shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-semibold text-primary truncate">{si + 1}. {label}</div>
+                                  <div className="text-[10px] text-secondary break-all">{body}</div>
+                                  {s.snippet && <div className="mt-1 text-[11px] text-secondary line-clamp-2">{s.snippet}</div>}
+                                </div>
+                                {sourceUrl && (
+                                  <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="text-secondary hover:text-[var(--accent-start)]" title="Open source URL">
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {m.role === 'assistant' && m.backendMessageId && m.content.trim().length > 0 && (
+                    <div className="mt-1 flex flex-col gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => submitFeedback(m, 'good')}
+                          disabled={feedbackForms[m.id]?.pending || feedbackForms[m.id]?.sent === 'good'}
+                          className="inline-flex items-center gap-1 rounded-md border border-[var(--border-default)] px-2 py-1 text-[10px] text-secondary hover:text-primary hover:border-[var(--accent-end)] disabled:opacity-60"
+                        >
+                          <ThumbsUp className="w-3 h-3" /> Helpful
+                        </button>
+                        <button
+                          onClick={() => updateFeedbackForm(m.id, { open: !feedbackForms[m.id]?.open })}
+                          disabled={feedbackForms[m.id]?.pending || feedbackForms[m.id]?.sent === 'bad'}
+                          className="inline-flex items-center gap-1 rounded-md border border-[var(--border-default)] px-2 py-1 text-[10px] text-secondary hover:text-primary hover:border-[var(--accent-end)] disabled:opacity-60"
+                        >
+                          <ThumbsDown className="w-3 h-3" /> Needs work
+                        </button>
+                        {feedbackForms[m.id]?.sent && (
+                          <span className="text-[10px] text-secondary">Feedback saved.</span>
+                        )}
+                      </div>
+                      {feedbackForms[m.id]?.open && (
+                        <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 space-y-2">
+                          <div className="flex flex-wrap gap-1.5">
+                            {feedbackOptions.map(option => (
+                              <button
+                                key={option}
+                                onClick={() => updateFeedbackForm(m.id, { category: option })}
+                                className={`rounded-md border px-2 py-1 text-[10px] ${feedbackForms[m.id]?.category === option ? 'border-[var(--accent-end)] text-[var(--accent-start)]' : 'border-[var(--border-default)] text-secondary'}`}
+                              >
+                                {option}
+                              </button>
+                            ))}
+                          </div>
+                          <input
+                            className="w-full rounded-md border border-[var(--border-default)] bg-[var(--bg-primary)] px-3 py-2 text-xs text-primary focus:outline-none focus:ring-2 focus:ring-[var(--accent-end)]"
+                            placeholder="Optional comment"
+                            value={feedbackForms[m.id]?.comment || ''}
+                            onChange={e => updateFeedbackForm(m.id, { comment: e.target.value })}
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => submitFeedback(m, 'bad')}
+                              disabled={feedbackForms[m.id]?.pending}
+                              className="rounded-md bg-[var(--accent-start)] px-3 py-1.5 text-[10px] font-semibold text-white disabled:opacity-60"
+                            >
+                              Submit feedback
+                            </button>
+                            {feedbackForms[m.id]?.error && <span className="text-[10px] text-red-500">{feedbackForms[m.id]?.error}</span>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

@@ -109,6 +109,16 @@ export default function ChatApp() {
     }))
   }
 
+  const uniqueSources = (sources: Source[] = []) => {
+    const seen = new Set<string>()
+    return cleanSources(sources).filter(source => {
+      const key = `${source.title || source.source}|${source.source_url || source.topic || ''}`.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
+
   const buildFallbackAnswer = (question: string, sources: Source[] = []) => {
     const sentences = cleanSources(sources).flatMap(source => splitSentences(source.snippet || ''))
     const seen = new Set<string>()
@@ -124,8 +134,7 @@ export default function ChatApp() {
       ? amountSentence
       : unique[0]
     const details = unique.filter(sentence => sentence !== direct).slice(0, 3)
-    const sourceLines = cleanSources(sources)
-      .filter((source, index, all) => all.findIndex(item => (item.title || item.source) === (source.title || source.source) && item.source_url === source.source_url) === index)
+    const sourceLines = uniqueSources(sources)
       .slice(0, 4)
       .map((source, index) => `${index + 1}. ${source.title || source.source}${source.source_url ? ` - ${source.source_url}` : ''}`)
 
@@ -144,7 +153,8 @@ export default function ChatApp() {
     if (
       answer.includes(LEGACY_FALLBACK_MARKER) ||
       /AI provider note:/i.test(answer) ||
-      /rag\/[^\s)]+\.md/i.test(answer)
+      /rag\/[^\s)]+\.md/i.test(answer) ||
+      (/^Based on the available NYSC documents:/i.test(answer.trim()) && answer.includes('...') && sources.length > 0)
     ) {
       return buildFallbackAnswer(question, sources)
     }
@@ -584,7 +594,7 @@ export default function ChatApp() {
                         Sources
                       </div>
                       <div className="divide-y divide-[var(--border-default)]">
-                        {cleanSources(m.sources).slice(0, 5).map((s, si) => {
+                        {uniqueSources(m.sources).slice(0, 5).map((s, si) => {
                           const label = s.title || s.source
                           const body = s.source_url || (s.topic ? `Topic: ${s.topic}` : 'NYSC document source')
                           const sourceUrl = s.source_url

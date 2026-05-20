@@ -682,12 +682,9 @@ def clean_chunk_text(text: str) -> str:
     return text.strip()
 
 
-def clean_source_snippet(text: str, limit: int = 260) -> str:
+def clean_source_snippet(text: str) -> str:
     cleaned = clean_chunk_text(text)
-    cleaned = cleaned.replace("Local project documents mention", "The available NYSC documents mention")
-    if len(cleaned) > limit:
-        cleaned = cleaned[: limit - 3].rstrip() + "..."
-    return cleaned
+    return cleaned.replace("Local project documents mention", "The available NYSC documents mention")
 
 
 def sentence_score(question: str, sentence: str) -> float:
@@ -710,27 +707,62 @@ def sentence_score(question: str, sentence: str) -> float:
         score -= 0.35
     if "when" in q_lower and any(word in s_lower for word in ("when", "usually", "monthly", "after", "during")):
         score += 0.2
+    if any(word in q_lower for word in ("valid", "reason", "reasons")) and any(word in s_lower for word in ("grounds", "reason", "accepted")):
+        score += 1.2
+        if any(word in s_lower for word in ("health", "marital", "security")):
+            score += 0.3
+    if "apply" in q_lower and any(word in s_lower for word in ("apply", "applications", "form", "upload", "submit")):
+        score += 0.55
+        if any(word in s_lower for word in ("portal", "upload", "submit", "form")):
+            score += 0.4
+    if "after" in q_lower and any(word in q_lower for word in ("approval", "approved")) and any(word in s_lower for word in ("after approval", "report", "update", "continue serving")):
+        score += 0.65
+    if "medical" in q_lower and any(word in s_lower for word in ("medical report", "hospital", "diagnosis", "tests", "fabricate")):
+        score += 0.65
     if any(phrase in q_lower and phrase in s_lower for phrase in ("bank account", "monthly clearance", "call-up letter", "medical fitness")):
         score += 0.25
     return score
 
 
+def split_clean_sentences(text: str) -> List[str]:
+    return [
+        sentence.strip(" -")
+        for sentence in re.split(r"(?<=[.!?])\s+", text)
+        if len(sentence.strip(" -")) >= 35
+    ]
+
+
+def build_complete_passage(sentences: Sequence[str], best_index: int, max_sentences: int = 5, include_previous: bool = True) -> str:
+    start = max(0, best_index - 1) if include_previous else best_index
+    end = best_index + 1
+
+    while end < len(sentences) and end - start < max_sentences:
+        end += 1
+
+    while include_previous and start > 0 and end - start < max_sentences:
+        start -= 1
+
+    return " ".join(sentences[start:end]).replace("Local project documents mention", "The available NYSC documents mention")
+
+
 def select_fallback_sentences(question: str, chunks: Sequence[ChunkRecord], limit: int = 4) -> List[str]:
     scored: List[Tuple[float, int, str]] = []
-    for chunk_index, chunk in enumerate(chunks[:5]):
+    topic_hint = infer_topic(question)
+    scoped_chunks = [chunk for chunk in chunks if chunk.topic == topic_hint] or list(chunks)
+    for chunk_index, chunk in enumerate(scoped_chunks[:5]):
         text = clean_chunk_text(chunk.content)
-        parts = re.split(r"(?<=[.!?])\s+", text)
-        for sentence in parts:
-            clean = sentence.strip(" -")
-            if len(clean) < 35:
-                continue
-            clean = clean.replace("Local project documents mention", "The available NYSC documents mention")
+        parts = split_clean_sentences(text)
+        best_score = 0.0
+        best_index = -1
+        for sentence_index, clean in enumerate(parts):
             score = sentence_score(question, clean)
-            if len(clean) > 280:
-                clean = clean[:277].rstrip() + "..."
-            if score <= 0:
-                continue
-            scored.append((score + max(0, 0.1 - (chunk_index * 0.02)), chunk_index, clean))
+            if score > best_score:
+                best_score = score
+                best_index = sentence_index
+        if best_score <= 0 or best_index < 0:
+            continue
+        passage = build_complete_passage(parts, best_index, include_previous="medical" not in question.lower())
+        scored.append((best_score + max(0, 0.1 - (chunk_index * 0.02)), chunk_index, passage))
 
     scored.sort(key=lambda item: item[0], reverse=True)
     selected: List[str] = []
@@ -750,8 +782,6 @@ def select_fallback_sentences(question: str, chunks: Sequence[ChunkRecord], limi
     fallback = []
     for chunk in chunks[:3]:
         text = clean_chunk_text(chunk.content)
-        if len(text) > 280:
-            text = text[:277].rstrip() + "..."
         fallback.append(text)
     return fallback
 
@@ -760,16 +790,19 @@ def fallback_answer(question: str, chunks: Sequence[ChunkRecord]) -> str:
     if not chunks:
         return "I could not find this in the available NYSC documents."
 
-    sentences = select_fallback_sentences(question, chunks)
+    topic_hint = infer_topic(question)
+    answer_chunks = [chunk for chunk in chunks if chunk.topic == topic_hint] or list(chunks)
+    sentences = select_fallback_sentences(question, answer_chunks)
     direct = sentences[0] if sentences else "I found related guidance in the available NYSC documents."
-    details = sentences[1:4]
+    direct_sentence_count = len(split_clean_sentences(direct))
+    details = sentences[1:4] if direct_sentence_count < 3 else []
 
     lines = ["Based on the available NYSC documents:", "", direct]
     if details:
         lines.extend(["", "Key points:"])
         for index, sentence in enumerate(details, start=1):
             lines.append(f"{index}. {sentence}")
-    lines.extend(["", format_sources(chunks[:5])])
+    lines.extend(["", format_sources(answer_chunks[:5])])
     return "\n".join(lines).strip()
 
 

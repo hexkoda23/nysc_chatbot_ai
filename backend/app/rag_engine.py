@@ -1446,11 +1446,11 @@ def fallback_answer(question: str, chunks: Sequence[ChunkRecord]) -> str:
     direct_sentence_count = len(split_clean_sentences(direct))
     details = sentences[1:4] if direct_sentence_count < 3 else []
 
-    lines = ["Based on the available NYSC documents:", "", direct]
+    lines = [direct]
     if asks_for_steps(question):
         step_sentences = split_clean_sentences(direct)
         if len(step_sentences) > 1:
-            lines = ["Based on the available NYSC documents:", "", "The steps are:"]
+            lines = ["The steps are:"]
             for index, sentence in enumerate(step_sentences[:5], start=1):
                 lines.append(f"{index}. {sentence}")
             details = []
@@ -1482,8 +1482,6 @@ def pop_guidance_answer(question: str, chunks: Sequence[ChunkRecord]) -> str:
     )
     if missed_clearance:
         lines = [
-            "Based on the available NYSC documents:",
-            "",
             (
                 "I cannot confirm from the available documents that you can collect your discharge certificate "
                 "without resolving final clearance first. Final clearance is the end-of-service process before "
@@ -1512,8 +1510,6 @@ def pop_guidance_answer(question: str, chunks: Sequence[ChunkRecord]) -> str:
         else "Follow the instructions from your LGI and state secretariat, and go with the documents required in your state."
     )
     lines = [
-        "Based on the available NYSC documents:",
-        "",
         f"{opening} {follow_sentence}",
         "",
         "What to do now:",
@@ -1527,7 +1523,16 @@ def pop_guidance_answer(question: str, chunks: Sequence[ChunkRecord]) -> str:
     return "\n".join(lines).strip()
 
 
+def strip_redundant_leadin(answer: str) -> str:
+    leadin = "Based on the available NYSC documents:"
+    stripped = answer.lstrip()
+    if stripped.lower().startswith(leadin.lower()):
+        return stripped[len(leadin) :].lstrip()
+    return answer
+
+
 def append_caution(answer: str, question: str) -> str:
+    answer = strip_redundant_leadin(answer)
     if is_sensitive_question(question):
         caution = "Please confirm critical issues with the official NYSC portal or your state secretariat."
         if caution.lower() not in answer.lower():

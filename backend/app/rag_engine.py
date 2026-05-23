@@ -1566,18 +1566,6 @@ def is_current_or_specific_lookup(question: str) -> bool:
     def has_term(term: str) -> bool:
         return bool(re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", q))
 
-    local_office_terms = (
-        "lgi",
-        "local government inspector",
-        "state coordinator",
-        "zonal inspector",
-        "secretariat",
-        "office address",
-        "phone number",
-        "contact number",
-        "contact details",
-    )
-    direct_lookup_starts = ("who is", "who's", "who are", "where is", "where can i find", "what is the address")
     current_terms = (
         "current",
         "latest",
@@ -1592,9 +1580,7 @@ def is_current_or_specific_lookup(question: str) -> bool:
         "deadline date",
     )
 
-    if any(has_term(term) for term in local_office_terms) and (
-        q.startswith(direct_lookup_starts) or any(has_term(word) for word in ("name", "contact", "phone", "address", "mowe"))
-    ):
+    if is_specific_office_lookup(question):
         return True
     return any(has_term(term) for term in current_terms)
 
@@ -1618,10 +1604,38 @@ def is_specific_office_lookup(question: str) -> bool:
         "phone number",
         "contact number",
         "contact details",
+        "state secretariat",
+        "nysc office",
+        "office",
     )
-    return any(has_term(term) for term in office_terms) and (
-        q.startswith(("who is", "who's", "who are", "where is", "where can i find", "what is the address"))
-        or any(has_term(word) for word in ("name", "contact", "phone", "address", "mowe"))
+    if not any(has_term(term) for term in office_terms):
+        return False
+
+    if q in {"what is lgi", "what is an lgi", "what does lgi mean", "meaning of lgi"}:
+        return False
+
+    lookup_intents = (
+        "who is",
+        "who's",
+        "who are",
+        "where is",
+        "where can i find",
+        "what is the address",
+        "name of",
+        "contact of",
+        "phone number",
+        "how can i contact",
+        "how do i contact",
+    )
+    has_place_relation = bool(re.search(r"\b(?:in|at|for|around|near)\s+[a-z0-9]", q))
+    has_lookup_word = any(has_term(word) for word in ("name", "contact", "phone", "address", "number"))
+    has_compact_place = bool(extract_lookup_place(q))
+    return (
+        q.startswith(lookup_intents)
+        or has_lookup_word
+        or has_place_relation
+        or has_compact_place
+        or q.startswith(("my lgi", "lgi "))
     )
 
 
@@ -1637,30 +1651,161 @@ def should_run_deep_search(question: str, chunks: Sequence[ChunkRecord], low_con
 
 def extract_lookup_place(question: str) -> str:
     q = normalize_query_terms(question)
-    place_match = re.search(r"\b(?:in|at|for)\s+([a-z0-9][a-z0-9\s-]{1,50})", q, flags=re.IGNORECASE)
-    if not place_match:
-        return ""
-    place = re.sub(r"\b(nysc|lgi|local government inspector|official|please|now)\b", " ", place_match.group(1), flags=re.IGNORECASE)
-    return re.sub(r"\s+", " ", place).strip()
+    cleaned = re.sub(r"[^a-zA-Z0-9\s-]", " ", q)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    stopwords = {
+        "who",
+        "what",
+        "does",
+        "mean",
+        "is",
+        "the",
+        "my",
+        "a",
+        "an",
+        "for",
+        "in",
+        "at",
+        "of",
+        "name",
+        "contact",
+        "phone",
+        "number",
+        "address",
+        "nysc",
+        "lgi",
+        "local",
+        "government",
+        "inspector",
+        "state",
+        "coordinator",
+        "zonal",
+        "secretariat",
+        "office",
+        "please",
+        "now",
+        "around",
+        "near",
+    }
+
+    def clean_place(raw: str) -> str:
+        tokens = [token for token in re.findall(r"[a-zA-Z0-9-]+", raw) if token.lower() not in stopwords]
+        return " ".join(tokens[:4]).strip()
+
+    patterns = (
+        r"\b(?:in|at|for|around|near)\s+([a-zA-Z0-9][a-zA-Z0-9\s-]{1,50})",
+        r"\b(?:lgi|local government inspector|state coordinator|zonal inspector|state secretariat|secretariat|nysc office)\s+(?:in|at|for)?\s*([a-zA-Z0-9][a-zA-Z0-9\s-]{1,50})",
+        r"([a-zA-Z0-9][a-zA-Z0-9\s-]{1,50})\s+\b(?:lgi|local government inspector|state coordinator|zonal inspector|state secretariat|secretariat|nysc office)\b",
+    )
+    for pattern in patterns:
+        place_match = re.search(pattern, cleaned, flags=re.IGNORECASE)
+        if place_match:
+            place = clean_place(place_match.group(1))
+            if place:
+                return place
+    return ""
+
+
+def known_state_name(place: str) -> str:
+    normalized = place.strip().lower()
+    states = {
+        "abia",
+        "adamawa",
+        "akwa ibom",
+        "anambra",
+        "bauchi",
+        "bayelsa",
+        "benue",
+        "borno",
+        "cross river",
+        "delta",
+        "ebonyi",
+        "edo",
+        "ekiti",
+        "enugu",
+        "fct",
+        "abuja",
+        "gombe",
+        "imo",
+        "jigawa",
+        "kaduna",
+        "kano",
+        "katsina",
+        "kebbi",
+        "kogi",
+        "kwara",
+        "lagos",
+        "nasarawa",
+        "niger",
+        "ogun",
+        "ondo",
+        "osun",
+        "oyo",
+        "plateau",
+        "rivers",
+        "sokoto",
+        "taraba",
+        "yobe",
+        "zamfara",
+    }
+    for state in states:
+        if normalized == state or normalized.endswith(f" {state}") or normalized.startswith(f"{state} "):
+            return "FCT" if state == "abuja" else state.title()
+    return ""
 
 
 def state_hint_for_place(place: str) -> str:
     normalized = place.strip().lower()
+    state = known_state_name(normalized)
+    if state:
+        return state
     hints = {
         "mowe": "Ogun",
         "ibafo": "Ogun",
         "sagamu": "Ogun",
+        "shagamu": "Ogun",
         "abeokuta": "Ogun",
+        "obafemi owode": "Ogun",
+        "ota": "Ogun",
+        "sango ota": "Ogun",
+        "ijebu ode": "Ogun",
+        "ikorodu": "Lagos",
+        "ikeja": "Lagos",
+        "lekki": "Lagos",
+        "ajah": "Lagos",
+        "surulere": "Lagos",
+        "yaba": "Lagos",
+        "wuse": "FCT",
+        "gwagwalada": "FCT",
+        "kubwa": "FCT",
     }
-    return hints.get(normalized, "")
+    for key, state_name in hints.items():
+        if normalized == key or key in normalized:
+            return state_name
+    return ""
+
+
+def office_lookup_terms(question: str) -> str:
+    q = normalize_query_terms(question).lower()
+    if "state coordinator" in q:
+        return '"state coordinator"'
+    if "zonal inspector" in q:
+        return '"zonal inspector"'
+    if "secretariat" in q or "office" in q:
+        return '"state secretariat"'
+    if "local government inspector" in q:
+        return '"local government inspector"'
+    if "lgi" in q:
+        return '"LGI"'
+    return '"NYSC office"'
 
 
 def build_web_search_query(question: str) -> str:
     q = normalize_query_terms(question)
     lower = q.lower()
-    if "lgi" in lower:
+    if is_specific_office_lookup(q):
         place = extract_lookup_place(q)
-        return f'"NYSC" "LGI" {place.title() if place else "local government inspector"}'
+        return f'"NYSC" {office_lookup_terms(q)} {place.title() if place else "contact"}'
     if "allowance" in lower and any(term in lower for term in ("current", "latest", "today", "now")):
         return '"NYSC allowance" "current" Nigeria official'
     if "secretariat" in lower or "state coordinator" in lower:
@@ -1676,11 +1821,14 @@ def build_web_search_queries(question: str) -> List[str]:
     if is_specific_office_lookup(question):
         place = extract_lookup_place(question)
         state_hint = state_hint_for_place(place)
+        office_terms = office_lookup_terms(question)
         if place:
-            queries.append(f'"NYSC" "{place.title()}"')
+            queries.append(f'"NYSC" {office_terms} "{place.title()}"')
+            queries.append(f'"NYSC" "{place.title()}" "office"')
         if state_hint:
             queries.append(f'"NYSC" "{state_hint}" "state secretariat"')
             queries.append(f'"NYSC" "{state_hint}" "state coordinator"')
+            queries.append(f'"NYSC" "{state_hint}" {office_terms}')
         queries.append('"NYSC" "state secretariat" contact')
     return list(dict.fromkeys(query for query in queries if query.strip()))
 
@@ -1704,6 +1852,28 @@ def web_result_to_chunk(result: WebSearchResult, index: int) -> ChunkRecord:
     )
 
 
+def web_result_matches_office_lookup(question: str, result: WebSearchResult) -> bool:
+    place = extract_lookup_place(question).lower()
+    state_hint = state_hint_for_place(place).lower()
+    haystack = " ".join([result.title, result.snippet, result.url, result.source]).lower()
+    office_terms = (
+        "lgi",
+        "local government inspector",
+        "secretariat",
+        "state coordinator",
+        "zonal inspector",
+        "sub-office",
+        "sub office",
+        "state office",
+    )
+    anchors = [term for term in (place, state_hint) if term]
+    if not anchors:
+        return False
+    has_anchor = any(anchor in haystack for anchor in anchors)
+    has_office = any(term in haystack for term in office_terms)
+    return has_anchor and has_office
+
+
 def run_deep_search(question: str) -> List[ChunkRecord]:
     seen_urls = set()
     results: List[WebSearchResult] = []
@@ -1718,12 +1888,20 @@ def run_deep_search(question: str) -> List[ChunkRecord]:
         if len(results) >= get_deep_search_top_k():
             break
 
+    if is_specific_office_lookup(question):
+        results = [result for result in results if web_result_matches_office_lookup(question, result)]
+
     chunks = [web_result_to_chunk(result, index) for index, result in enumerate(results, start=1)]
     chunks.sort(key=lambda chunk: (chunk.official, chunk.score), reverse=True)
     return chunks
 
 
 def web_search_unavailable_answer(question: str) -> str:
+    if is_specific_office_lookup(question):
+        return (
+            "I could not confirm the current NYSC LGI, office contact, or officer name for that location from reliable sources right now. "
+            "Please check your NYSC dashboard, contact the NYSC state secretariat, or ask at the nearest NYSC office before acting."
+        )
     if web_search_enabled():
         return (
             "I could not confirm this from the local NYSC documents, and web search did not return a reliable result right now. "
@@ -1775,6 +1953,19 @@ def _get_template_response(message: str) -> Optional[Dict[str, Any]]:
             ),
             "sources": [],
             "is_fallback": False,
+            "provider": None,
+            "confidence": 1.0,
+            "low_confidence": False,
+        }
+    if text in {"what is lgi", "what is an lgi", "what does lgi mean", "meaning of lgi"}:
+        return {
+            "answer": (
+                "LGI means Local Government Inspector. In NYSC, this is the officer who supervises corps members "
+                "within a local government area, including clearance guidance, PPA-related issues, and local NYSC instructions. "
+                "For the current LGI assigned to your area, confirm through your NYSC dashboard or state secretariat."
+            ),
+            "sources": [],
+            "is_fallback": True,
             "provider": None,
             "confidence": 1.0,
             "low_confidence": False,

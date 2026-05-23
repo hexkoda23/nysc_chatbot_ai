@@ -95,7 +95,30 @@ def is_relevant_result(query: str, result: WebSearchResult) -> bool:
     haystack = " ".join([result.title, result.snippet, result.url, result.source]).lower()
     if "nysc" in query_lower and "nysc" not in haystack and not is_official_url(result.url):
         return False
-    if "allowance" in query_lower and not any(term in haystack for term in ("allowance", "allawee", "stipend", "nysc.gov.ng")):
+
+    if "lgi" in query_lower or "local government inspector" in query_lower:
+        location_terms = [
+            token
+            for token in re.findall(r"[a-z0-9]+", query_lower)
+            if token not in {"nysc", "lgi", "local", "government", "inspector", "nigeria", "official", "state", "contact"}
+        ]
+        office_terms = (
+            "lgi",
+            "local government inspector",
+            "secretariat",
+            "state coordinator",
+            "zonal inspector",
+            "sub-office",
+            "sub office",
+        )
+        has_location = any(term in haystack for term in location_terms)
+        has_office = any(term in haystack for term in office_terms)
+        if location_terms and not (has_location or has_office):
+            return False
+        if not location_terms and not has_office:
+            return False
+
+    if "allowance" in query_lower and not any(term in haystack for term in ("allowance", "allawee", "stipend")):
         return False
     return True
 

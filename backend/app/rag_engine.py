@@ -22,6 +22,23 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 DEFAULT_TOP_K = 5
 INDEX_LOCK = threading.Lock()
+ALLOWED_FILES = {
+    "call_up.md",
+    "cds.md",
+    "corrections.md",
+    "decree.md",
+    "faq.md",
+    "posting.md",
+    "redeployment.md",
+    "registration.md",
+    "saed.md",
+    "safety.md",
+    "nysc_allowance_2024.txt",
+    "nysc_current_information_2024_2025.txt",
+    "nysc_policy_on_sexual_harassment.txt",
+    "nyscdecree.txt",
+    "bye-law pfd_103222.txt",
+}
 STOPWORDS = {
     "a",
     "an",
@@ -106,7 +123,6 @@ CANONICAL_QUERY_TERMS = {
     "callup",
     "call-up",
     "pop",
-    "passing",
     "discharge",
 }
 
@@ -143,7 +159,7 @@ SEMANTIC_EXPANSIONS: Sequence[Tuple[Sequence[str], str]] = (
         "monthly allowance payment bank account clearance federal allowance",
     ),
     (
-        ("steps", "process", "procedure", "how do i", "what next"),
+        ("steps", "process", "procedure", "what next"),
         "steps process procedure apply portal submit documents approval report print",
     ),
     (
@@ -221,6 +237,9 @@ def get_rag_docs_path() -> Path:
     path = Path(raw)
     if not path.is_absolute():
         path = PROJECT_ROOT / path
+    fallback_data = PROJECT_ROOT / "backend" / "data"
+    if not path.exists() and path.name.lower() == "rag" and fallback_data.exists():
+        return fallback_data
     return path
 
 
@@ -238,12 +257,52 @@ def get_min_score() -> float:
         return 0.2
 
 
+def get_bm25_min_score() -> float:
+    raw = os.getenv("MIN_BM25_SCORE", os.getenv("MIN_RETRIEVAL_SCORE", "0.2"))
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 0.2
+
+
 def normalize_text(text: str) -> str:
     text = text.replace("\ufeff", "").replace("\r\n", "\n").replace("\r", "\n")
     text = text.replace("\u00a0", " ")
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+def _normalize_text(text: str) -> str:
+    return normalize_text(text)
+
+
+def _infer_topic_from_filename(filename: str) -> str:
+    name = Path(filename).name.lower()
+    compact = name.replace("-", "_").replace(" ", "_")
+    if "call_up" in compact or "callup" in compact:
+        return "call_up"
+    if "redeployment" in compact or "relocation" in compact:
+        return "redeployment"
+    if "allowance" in compact or "allowee" in compact or "allawee" in compact:
+        return "allowance"
+    if "cds" in compact or "community_development" in compact:
+        return "cds"
+    if "registration" in compact or "mobilization" in compact:
+        return "registration"
+    if "posting" in compact:
+        return "posting"
+    if "saed" in compact or "skills_acquisition" in compact:
+        return "saed"
+    if "safety" in compact or "harassment" in compact or "security" in compact:
+        return "security"
+    if "faq" in compact:
+        return "faq"
+    if "exemption" in compact or "exclusion" in compact:
+        return "exemption"
+    if "decree" in compact or "bye_law" in compact or "policy" in compact:
+        return "general"
+    return infer_topic(name)
 
 
 def edit_distance_at_most(left: str, right: str, limit: int = 2) -> bool:
@@ -630,12 +689,23 @@ def rebuild_index(docs_path: Optional[Path] = None) -> Dict[str, Any]:
                     pass
                 chunk_count += 1
 
-    return {
+    bm25_chunks: Optional[int] = None
+    try:
+        from .rag.bm25_retriever import rebuild_index as rebuild_bm25_index
+
+        bm25_chunks = rebuild_bm25_index()
+    except Exception as exc:
+        warnings.append(f"BM25 rebuild skipped: {type(exc).__name__}: {str(exc)[:160]}")
+
+    stats: Dict[str, Any] = {
         "documents": len(documents),
         "chunks": chunk_count,
         "duplicates": duplicate_chunks,
         "warnings": warnings,
     }
+    if bm25_chunks is not None:
+        stats["bm25_chunks"] = bm25_chunks
+    return stats
 
 
 def ensure_index() -> None:
@@ -694,11 +764,78 @@ def fetch_chunks_by_ids(conn: sqlite3.Connection, ids: Sequence[str]) -> List[sq
     return [by_id[i] for i in ids if i in by_id]
 
 
+def topic_matches(actual: str, expected: Optional[str]) -> bool:
+    if not expected:
+        return True
+    actual_clean = (actual or "").lower()
+    expected_clean = expected.lower()
+    equivalents = {
+        "relocation": {"relocation", "redeployment"},
+        "redeployment": {"relocation", "redeployment"},
+        "call_up_letter": {"call_up_letter", "call_up"},
+        "call_up": {"call_up_letter", "call_up"},
+    }
+    return actual_clean in equivalents.get(expected_clean, {expected_clean})
+
+
+def bm25_result_to_chunk(result: Dict[str, Any]) -> ChunkRecord:
+    file_path = str(result.get("file_path") or result.get("source") or "")
+    try:
+        filepath = Path(file_path).resolve().relative_to(PROJECT_ROOT).as_posix()
+    except Exception:
+        filepath = file_path or str(result.get("source") or "")
+    content = str(result.get("text") or "")
+    return ChunkRecord(
+        id=str(result.get("chunk_id") or content_checksum(content)),
+        filepath=filepath,
+        title=str(result.get("title") or result.get("source") or filepath),
+        topic=str(result.get("topic") or "faq"),
+        source_url=str(result.get("source_url") or ""),
+        last_checked=str(result.get("last_checked") or ""),
+        official=bool(result.get("official", False)),
+        content=content,
+        checksum=content_checksum(content),
+        score=float(result.get("score") or 0.0),
+    )
+
+
 def retrieve_chunks(question: str, top_k: Optional[int] = None, topic: Optional[str] = None) -> List[ChunkRecord]:
     ensure_index()
     question = normalize_query_terms(question)
     top_k = top_k or get_top_k()
     topic_hint = topic or infer_topic(question)
+    try:
+        from .rag.bm25_retriever import retrieve as bm25_retrieve
+
+        bm25_results = bm25_retrieve(question, top_k=max(top_k * 3, top_k), min_score=get_bm25_min_score())
+        bm25_chunks: List[ChunkRecord] = []
+        for result in bm25_results:
+            chunk = bm25_result_to_chunk(result)
+            if not topic_matches(chunk.topic, topic):
+                continue
+            if topic_hint and topic_matches(chunk.topic, topic_hint):
+                chunk.score += 5.0 if topic_hint == "portal" else 0.25
+            bm25_chunks.append(chunk)
+
+        if topic_hint == "portal":
+            preferred = [chunk for chunk in bm25_chunks if topic_matches(chunk.topic, topic_hint)]
+            if preferred:
+                bm25_chunks = preferred + [chunk for chunk in bm25_chunks if chunk not in preferred]
+
+        deduped_bm25: List[ChunkRecord] = []
+        seen_bm25 = set()
+        for chunk in sorted(bm25_chunks, key=lambda c: c.score, reverse=True):
+            signature = content_checksum(chunk.content[:700])
+            if signature in seen_bm25:
+                continue
+            seen_bm25.add(signature)
+            deduped_bm25.append(chunk)
+            if len(deduped_bm25) >= top_k:
+                break
+        return deduped_bm25
+    except Exception:
+        pass
+
     fts_query = build_fts_query(question)
     candidates: List[ChunkRecord] = []
 
@@ -748,6 +885,14 @@ def retrieve_chunks(question: str, top_k: Optional[int] = None, topic: Optional[
         if len(deduped) >= top_k:
             break
     return deduped
+
+
+def _is_low_confidence(results: List[Dict[str, Any]]) -> bool:
+    """Return True if the best BM25 result is below the confidence threshold."""
+    if not results:
+        return True
+    top_score = float(results[0].get("score") or 0.0)
+    return top_score < get_bm25_min_score()
 
 
 def is_sensitive_question(question: str) -> bool:
@@ -957,6 +1102,9 @@ def sentence_score(question: str, sentence: str) -> float:
         score -= 0.35
     if "when" in q_lower and any(word in s_lower for word in ("when", "usually", "monthly", "after", "during")):
         score += 0.2
+    if "registration" in q_lower and any(word in q_lower for word in ("closed", "closing", "close", "deadline")):
+        if any(word in s_lower for word in ("open", "close", "closed", "batch", "stream", "official announcements")):
+            score += 1.0
     if any(word in q_lower for word in ("valid", "reason", "reasons")) and any(word in s_lower for word in ("grounds", "reason", "accepted")):
         score += 1.2
         if any(word in s_lower for word in ("health", "marital", "security")):
@@ -1021,7 +1169,10 @@ def select_fallback_sentences(question: str, chunks: Sequence[ChunkRecord], limi
                 best_index = sentence_index
         if best_score <= 0 or best_index < 0:
             continue
-        include_previous = not any(term in question.lower() for term in ("medical", "biometric capture"))
+        include_previous = not any(
+            term in question.lower()
+            for term in ("medical", "biometric capture", "registration has closed", "registration closed")
+        )
         passage = build_complete_passage(parts, best_index, include_previous=include_previous)
         scored.append((best_score + max(0, 0.1 - (chunk_index * 0.02)), chunk_index, passage))
 

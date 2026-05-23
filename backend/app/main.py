@@ -10,7 +10,9 @@ from typing import Any, Deque, Dict, List, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .database import init_db, insert_feedback, insert_message, upsert_conversation
@@ -54,7 +56,10 @@ def cors_origins() -> List[str]:
 async def warm_rag_index() -> None:
     try:
         await asyncio.to_thread(ensure_index)
-        logger.info("RAG index is ready.")
+        from .rag.bm25_retriever import retrieve as bm25_retrieve
+
+        await asyncio.to_thread(bm25_retrieve, "NYSC registration", 1)
+        logger.info("RAG and BM25 indexes are ready.")
     except Exception:
         logger.exception("RAG index warm-up failed. It will be retried on the next chat request.")
 
@@ -141,6 +146,14 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "Invalid request. Check required fields and message length."},
+    )
+
+
 @app.get("/")
 def root() -> Dict[str, Any]:
     return {
@@ -152,7 +165,7 @@ def root() -> Dict[str, Any]:
 
 @app.get("/health")
 def health() -> Dict[str, Any]:
-    return {"status": "ok", "rag": "local-sqlite-fts"}
+    return {"status": "ok", "rag": "local-bm25-sqlite"}
 
 
 @app.get("/api/health")

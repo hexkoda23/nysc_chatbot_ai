@@ -1,0 +1,22 @@
+[
+  {"id": 1, "topic": "registration", "question": "How do I register for NYSC mobilization?"},
+  {"id": 2, "topic": "registration", "question": "What should I do if my name is not on the NYSC Senate list?"},
+  {"id": 3, "topic": "call_up_letter", "question": "How do I print my NYSC call-up letter?"},
+  {"id": 4, "topic": "camp", "question": "What should I take to NYSC orientation camp?"},
+  {"id": 5, "topic": "relocation", "question": "How can I apply for NYSC redeployment?"},
+  {"id": 6, "topic": "relocation", "question": "What are valid reasons for NYSC relocation?"},
+  {"id": 7, "topic": "ppa", "question": "What is a PPA in NYSC?"},
+  {"id": 8, "topic": "ppa", "question": "What should I do if my PPA rejects me?"},
+  {"id": 9, "topic": "cds", "question": "Is CDS compulsory for corps members?"},
+  {"id": 10, "topic": "saed", "question": "What is SAED in NYSC camp?"},
+  {"id": 11, "topic": "allowance", "question": "What is the current NYSC allowance?"},
+  {"id": 12, "topic": "allowance", "question": "What should I do if my NYSC allowance is delayed?"},
+  {"id": 13, "topic": "clearance", "question": "What happens if I miss monthly clearance?"},
+  {"id": 14, "topic": "clearance", "question": "What documents are needed for final clearance?"},
+  {"id": 15, "topic": "exemption", "question": "Who qualifies for NYSC exemption certificate?"},
+  {"id": 16, "topic": "portal", "question": "How do I reset my NYSC portal password?"},
+  {"id": 17, "topic": "portal", "question": "What should I do if my biometric capture fails?"},
+  {"id": 18, "topic": "security", "question": "How can corps members avoid NYSC-related scams?"},
+  {"id": 19, "topic": "security", "question": "Should I pay someone online to influence my NYSC posting?"},
+  {"id": 20, "topic": "faq", "question": "Which official channels should I confirm critical NYSC issues with?"}
+]

@@ -1,14 +1,14 @@
-import sys, os
-sys.path.append(os.path.join(os.getcwd(), 'backend'))
-
-from app.rag_engine import _get_conversation_context, CONVERSATION_HISTORY, _fast_rag_response
+from backend.app.database import insert_message, upsert_conversation
+from backend.app.rag_engine import run_nysc_agent
 
 sid = "debug_sess_2"
-CONVERSATION_HISTORY[sid] = [
-    ("What is the current NYSC allowance?", "The current allowance is N77,000 per month.")
-]
+upsert_conversation(sid, "Debug session")
+insert_message(sid, "user", "How can I apply for NYSC relocation?")
+first = run_nysc_agent("How can I apply for NYSC relocation?", sid)
+insert_message(sid, "assistant", first["answer"], first.get("sources", []))
+insert_message(sid, "user", "What are the steps?")
 
-res = _fast_rag_response("What is the posting policy?", _get_conversation_context(sid))
+res = run_nysc_agent("What are the steps?", sid)
 print("\n--- Answer ---")
 print(res["answer"])
 print("---------------\n")

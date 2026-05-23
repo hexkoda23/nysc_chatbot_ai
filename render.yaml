@@ -18,5 +18,7 @@ services:
         value: auto
       - key: TOP_K
         value: "5"
+      - key: MIN_BM25_SCORE
+        value: "0.2"
       - key: MIN_RETRIEVAL_SCORE
         value: "0.2"

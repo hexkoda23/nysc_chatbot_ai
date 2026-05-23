@@ -7,7 +7,7 @@ Production-light NYSC assistant built with a Next.js frontend, FastAPI backend, 
 - Frontend: Next.js 14 in `web/`
 - Backend: FastAPI in `backend/app/`
 - Knowledge base: local markdown files in `rag/`
-- Retrieval: SQLite FTS5 with lexical scoring, semantic keyword expansion, and conversation-aware follow-up rewriting
+- Retrieval: in-memory BM25 over local documents, with SQLite FTS5 fallback, semantic keyword expansion, and conversation-aware follow-up rewriting
 - Persistence: SQLite database from `DATABASE_URL`
 - LLM providers: Groq, Gemini, OpenRouter, or OpenAI, selected server-side
 - Fallback mode: works without any LLM API key by returning a source-based answer from retrieved documents
@@ -75,7 +75,11 @@ or:
 python backend/scripts/index_rag.py
 ```
 
-The script rebuilds the SQLite document and chunk index, skips duplicate chunks, and prints metadata warnings.
+The script rebuilds the SQLite document and chunk index, skips duplicate chunks, and prints metadata warnings. BM25 is rebuilt automatically on backend startup and `/api/reload`; you can also inspect it directly:
+
+```bash
+npm run index-bm25
+```
 
 ## Run Backend
 
@@ -154,6 +158,12 @@ python backend/scripts/run_evals.py
 
 The eval checks source retrieval, topic match, fallback usage, low-confidence answers, and failed retrievals. Results are written to SQLite and `evals/eval_results_latest.json`.
 
+Run the focused BM25 retrieval eval with:
+
+```bash
+npm run eval-bm25
+```
+
 ## Conversation Memory
 
 The backend stores chat messages in SQLite and uses recent messages to understand short follow-ups. For example, if a user asks about redeployment and then asks "what are the steps", the backend rewrites the retrieval query with the previous redeployment question before searching the local NYSC documents. This is lightweight session memory, not model training.
@@ -192,7 +202,9 @@ SQLite warning: free hosting filesystems can be ephemeral. Back up `nysc_chatbot
 
 ```bash
 npm run index-rag
+npm run index-bm25
 npm run eval
+npm run eval-bm25
 npm run backend
 npm run frontend
 ```

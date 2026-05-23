@@ -31,3 +31,39 @@ uvicorn backend.app.main:app --reload
 - `POST /api/translate`
 
 See the root `README.md` for full setup, evaluation, and deployment notes.
+
+## BM25 Retrieval
+
+The backend now ranks local NYSC document chunks with BM25. At startup, the app warms the existing SQLite document index and the in-memory BM25 index. `/api/reload` rebuilds both indexes so newly edited documents are searchable without restarting the server.
+
+BM25 reads the configured RAG document path from `RAG_DOCS_PATH`. In this repo the production knowledge base lives in `../rag`; the legacy `backend/data` corpus is also supported when `RAG_DOCS_PATH=./data` is used. For `backend/data`, only filenames listed in `ALLOWED_FILES` in `backend/app/rag_engine.py` are indexed so large research files do not slow the app down.
+
+To add new NYSC documents, drop a `.md` or `.txt` file into the configured document folder. For the curated markdown knowledge base, include frontmatter with `title`, `topic`, `source_url`, `last_checked`, and `official`. For `backend/data`, add the lowercase filename to `ALLOWED_FILES`, then call `POST /api/reload` or restart the backend.
+
+Build the BM25 index report:
+
+```bash
+python backend/scripts/index_bm25.py
+```
+
+Run the chatbot backend:
+
+```bash
+uvicorn backend.app.main:app --reload
+```
+
+Run BM25 retrieval evals:
+
+```bash
+python backend/scripts/eval_bm25.py
+```
+
+Configuration:
+
+```env
+TOP_K=5
+MIN_BM25_SCORE=0.2
+RAG_DOCS_PATH=./rag
+```
+
+Fallback mode still works without a Groq, Gemini, OpenRouter, or OpenAI key. If answer generation is unavailable, the API returns a source-based answer from the top BM25 chunks and still includes source metadata for the frontend citations panel.

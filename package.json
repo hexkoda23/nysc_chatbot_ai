@@ -2,7 +2,9 @@
   "private": true,
   "scripts": {
     "index-rag": "python backend/scripts/index_rag.py",
+    "index-bm25": "python backend/scripts/index_bm25.py",
     "eval": "python backend/scripts/run_evals.py",
+    "eval-bm25": "python backend/scripts/eval_bm25.py",
     "backend": "uvicorn backend.app.main:app --reload",
     "frontend": "npm --prefix web run dev"
   }

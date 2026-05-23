@@ -126,6 +126,10 @@ export default function ChatApp() {
     })
   }
 
+  const hasWebSources = (sources: Source[] = []) => {
+    return sources.some(source => source.topic === 'web' || /^https?:\/\//i.test(source.filepath || '') || /^https?:\/\//i.test(source.source_url || ''))
+  }
+
   const buildFallbackAnswer = (question: string, sources: Source[] = []) => {
     const sentences = cleanSources(sources).flatMap(source => splitSentences(source.snippet || ''))
     const seen = new Set<string>()
@@ -143,8 +147,6 @@ export default function ChatApp() {
     const details = unique.filter(sentence => sentence !== direct).slice(0, 3)
 
     return [
-      'Based on the available NYSC documents:',
-      '',
       direct || 'I found related guidance in the available NYSC documents.',
       ...(details.length ? ['', 'Key points:', ...details.map((item, index) => `${index + 1}. ${item}`)] : []),
       '',
@@ -603,7 +605,7 @@ export default function ChatApp() {
                   </div>
                   {m.role === 'assistant' && m.isFallback && (
                     <div className="text-[10px] text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
-                      Answer based on the available NYSC documents.
+                      {hasWebSources(m.sources || []) ? 'Answer based on web search sources. Confirm critical issues with official NYSC channels.' : 'Answer based on the available NYSC documents.'}
                     </div>
                   )}
                   {m.sources && m.sources.length > 0 && (

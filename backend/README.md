@@ -9,6 +9,7 @@ FastAPI backend for the NYSC assistant.
 - Retrieves top NYSC context chunks per question with semantic keyword expansion
 - Uses recent SQLite chat history to resolve short follow-up questions
 - Calls a configured LLM provider when available
+- Runs backend-only web search for current, location-specific, or weakly matched questions
 - Falls back to retrieved source sections when no provider is available
 - Stores conversations, messages, feedback, document metadata, and eval results in SQLite
 
@@ -67,3 +68,19 @@ RAG_DOCS_PATH=./rag
 ```
 
 Fallback mode still works without a Groq, Gemini, OpenRouter, or OpenAI key. If answer generation is unavailable, the API returns a source-based answer from the top BM25 chunks and still includes source metadata for the frontend citations panel.
+
+## Deep Search
+
+The chatbot uses local RAG first. If local retrieval is weak, or the user asks for current or location-specific information such as an LGI name, contact, office address, latest allowance, or current deadline, the backend can run a web search and cite the web results.
+
+Web search is backend-only; API keys are never sent to the frontend. Configure it with:
+
+```env
+WEB_SEARCH_ENABLED=true
+WEB_SEARCH_PROVIDER=auto
+WEB_SEARCH_RESULTS=5
+WEB_SEARCH_TIMEOUT_SECONDS=5
+SERPAPI_KEY=
+```
+
+When `SERPAPI_KEY` is set, the backend uses SerpAPI. Without it, the backend tries free Bing and DuckDuckGo fallbacks. If web search cannot confirm the answer, the chatbot should say so instead of forcing an unrelated local NYSC document answer.

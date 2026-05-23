@@ -14,6 +14,7 @@ import httpx
 from dotenv import load_dotenv
 
 from .database import PROJECT_ROOT, get_db, get_recent_messages, init_db, utc_now
+from .web_search import WebSearchResult, is_official_url, search_web, web_search_enabled
 
 
 load_dotenv(PROJECT_ROOT / ".env")
@@ -373,6 +374,13 @@ def get_bm25_min_score() -> float:
         return max(0.0, float(raw))
     except ValueError:
         return 0.2
+
+
+def get_deep_search_top_k() -> int:
+    try:
+        return max(1, min(8, int(os.getenv("WEB_SEARCH_RESULTS", "5"))))
+    except ValueError:
+        return 5
 
 
 def normalize_text(text: str) -> str:
@@ -1163,7 +1171,7 @@ def format_sources(chunks: Sequence[ChunkRecord]) -> str:
     return "\n".join(lines)
 
 
-SYSTEM_PROMPT = """You are an NYSC assistant for Nigerian corps members. Answer only using the provided NYSC context. If the context does not contain enough information, say you cannot confirm from the available documents. Do not invent rules, dates, fees, portal instructions, or relocation requirements. Always include source references from the retrieved documents. Use simple Nigerian English. Be helpful, clear, and practical."""
+SYSTEM_PROMPT = """You are an NYSC assistant for Nigerian corps members. Answer only using the provided NYSC context and web search snippets. If the context does not contain enough information, say you cannot confirm from the available sources. Do not invent rules, dates, fees, portal instructions, staff names, phone numbers, or relocation requirements. Always include source references from the retrieved documents or web results. Use simple Nigerian English. Be helpful, clear, and practical."""
 
 
 def build_grounded_prompt(question: str, chunks: Sequence[ChunkRecord], target_lang: str = "en") -> Tuple[str, str]:
@@ -1192,7 +1200,7 @@ def build_grounded_prompt(question: str, chunks: Sequence[ChunkRecord], target_l
 
 {language_note}
 
-Retrieved NYSC context:
+Retrieved NYSC context and web search snippets:
 {chr(10).join(context_blocks)}
 
 Required answer structure:
@@ -1548,6 +1556,214 @@ def append_sources_if_missing(answer: str, chunks: Sequence[ChunkRecord]) -> str
     return f"{answer.rstrip()}\n\n{format_sources(chunks)}"
 
 
+def is_current_or_specific_lookup(question: str) -> bool:
+    q = normalize_query_terms(question).lower()
+    q = re.sub(r"[^a-z0-9\s-]", " ", q)
+    q = re.sub(r"\s+", " ", q).strip()
+    if not q:
+        return False
+
+    def has_term(term: str) -> bool:
+        return bool(re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", q))
+
+    local_office_terms = (
+        "lgi",
+        "local government inspector",
+        "state coordinator",
+        "zonal inspector",
+        "secretariat",
+        "office address",
+        "phone number",
+        "contact number",
+        "contact details",
+    )
+    direct_lookup_starts = ("who is", "who's", "who are", "where is", "where can i find", "what is the address")
+    current_terms = (
+        "current",
+        "latest",
+        "today",
+        "this week",
+        "this month",
+        "this batch",
+        "this stream",
+        "now",
+        "right now",
+        "closing date",
+        "deadline date",
+    )
+
+    if any(has_term(term) for term in local_office_terms) and (
+        q.startswith(direct_lookup_starts) or any(has_term(word) for word in ("name", "contact", "phone", "address", "mowe"))
+    ):
+        return True
+    return any(has_term(term) for term in current_terms)
+
+
+def is_specific_office_lookup(question: str) -> bool:
+    q = normalize_query_terms(question).lower()
+    q = re.sub(r"[^a-z0-9\s-]", " ", q)
+    q = re.sub(r"\s+", " ", q).strip()
+    if not q:
+        return False
+
+    def has_term(term: str) -> bool:
+        return bool(re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", q))
+
+    office_terms = (
+        "lgi",
+        "local government inspector",
+        "state coordinator",
+        "zonal inspector",
+        "office address",
+        "phone number",
+        "contact number",
+        "contact details",
+    )
+    return any(has_term(term) for term in office_terms) and (
+        q.startswith(("who is", "who's", "who are", "where is", "where can i find", "what is the address"))
+        or any(has_term(word) for word in ("name", "contact", "phone", "address", "mowe"))
+    )
+
+
+def should_run_deep_search(question: str, chunks: Sequence[ChunkRecord], low_confidence: bool) -> bool:
+    if is_specific_office_lookup(question):
+        return True
+    if not web_search_enabled():
+        return False
+    if is_current_or_specific_lookup(question):
+        return True
+    return low_confidence or not chunks
+
+
+def extract_lookup_place(question: str) -> str:
+    q = normalize_query_terms(question)
+    place_match = re.search(r"\b(?:in|at|for)\s+([a-z0-9][a-z0-9\s-]{1,50})", q, flags=re.IGNORECASE)
+    if not place_match:
+        return ""
+    place = re.sub(r"\b(nysc|lgi|local government inspector|official|please|now)\b", " ", place_match.group(1), flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", place).strip()
+
+
+def state_hint_for_place(place: str) -> str:
+    normalized = place.strip().lower()
+    hints = {
+        "mowe": "Ogun",
+        "ibafo": "Ogun",
+        "sagamu": "Ogun",
+        "abeokuta": "Ogun",
+    }
+    return hints.get(normalized, "")
+
+
+def build_web_search_query(question: str) -> str:
+    q = normalize_query_terms(question)
+    lower = q.lower()
+    if "lgi" in lower:
+        place = extract_lookup_place(q)
+        return f'"NYSC" "LGI" {place.title() if place else "local government inspector"}'
+    if "allowance" in lower and any(term in lower for term in ("current", "latest", "today", "now")):
+        return '"NYSC allowance" "current" Nigeria official'
+    if "secretariat" in lower or "state coordinator" in lower:
+        return f"{q} NYSC Nigeria official"
+    if any(term in lower for term in ("current", "latest", "today", "this batch", "this stream", "closing date", "deadline")):
+        return f"{q} NYSC Nigeria official latest"
+    return f"{q} NYSC Nigeria official"
+
+
+def build_web_search_queries(question: str) -> List[str]:
+    primary = build_web_search_query(question)
+    queries = [primary]
+    if is_specific_office_lookup(question):
+        place = extract_lookup_place(question)
+        state_hint = state_hint_for_place(place)
+        if place:
+            queries.append(f'"NYSC" "{place.title()}"')
+        if state_hint:
+            queries.append(f'"NYSC" "{state_hint}" "state secretariat"')
+            queries.append(f'"NYSC" "{state_hint}" "state coordinator"')
+        queries.append('"NYSC" "state secretariat" contact')
+    return list(dict.fromkeys(query for query in queries if query.strip()))
+
+
+def web_result_to_chunk(result: WebSearchResult, index: int) -> ChunkRecord:
+    content = ". ".join(part for part in (result.title, result.snippet) if part).strip()
+    if not content:
+        content = result.url
+    checksum = content_checksum(f"{result.url}|{content}")
+    return ChunkRecord(
+        id=f"web_{checksum[:16]}_{index}",
+        filepath=result.url,
+        title=result.title or result.source or "Web search result",
+        topic="web",
+        source_url=result.url,
+        last_checked=utc_now()[:10],
+        official=is_official_url(result.url),
+        content=content,
+        checksum=checksum,
+        score=result.score,
+    )
+
+
+def run_deep_search(question: str) -> List[ChunkRecord]:
+    seen_urls = set()
+    results: List[WebSearchResult] = []
+    for query in build_web_search_queries(question):
+        for result in search_web(query, max_results=get_deep_search_top_k()):
+            if result.url in seen_urls:
+                continue
+            seen_urls.add(result.url)
+            results.append(result)
+            if len(results) >= get_deep_search_top_k():
+                break
+        if len(results) >= get_deep_search_top_k():
+            break
+
+    chunks = [web_result_to_chunk(result, index) for index, result in enumerate(results, start=1)]
+    chunks.sort(key=lambda chunk: (chunk.official, chunk.score), reverse=True)
+    return chunks
+
+
+def web_search_unavailable_answer(question: str) -> str:
+    if web_search_enabled():
+        return (
+            "I could not confirm this from the local NYSC documents, and web search did not return a reliable result right now. "
+            "Please confirm through the official NYSC portal, the NYSC state secretariat, or your LGI before acting."
+        )
+    return (
+        "I could not confirm this from the local NYSC documents. Web search is not enabled on this deployment, "
+        "so please confirm through the official NYSC portal, the NYSC state secretariat, or your LGI."
+    )
+
+
+def web_fallback_answer(question: str, web_chunks: Sequence[ChunkRecord]) -> str:
+    if not web_chunks:
+        return web_search_unavailable_answer(question)
+
+    opening = (
+        "I could not confirm the exact current or location-specific detail from the local NYSC documents. "
+        "I searched the web and found these possibly relevant sources."
+        if is_current_or_specific_lookup(question)
+        else "I searched beyond the local NYSC documents because the local match was weak."
+    )
+    lines = [
+        opening,
+        "",
+        "What I found:",
+    ]
+    for index, chunk in enumerate(web_chunks[:5], start=1):
+        snippet = clean_source_snippet(chunk.content)
+        lines.append(f"{index}. {chunk.title}: {snippet}")
+    lines.extend(
+        [
+            "",
+            "I cannot verify details beyond these sources, so confirm with official NYSC channels before acting.",
+            "",
+            format_sources(web_chunks[:5]),
+        ]
+    )
+    return "\n".join(lines).strip()
+
+
 def _get_template_response(message: str) -> Optional[Dict[str, Any]]:
     text = message.strip().lower()
     greetings = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
@@ -1579,9 +1795,53 @@ def run_nysc_agent(message: str, session_id: str, target_lang: str = "en") -> Di
     sources = [chunk.as_source() for chunk in answer_chunks]
     best_score = max((chunk.score for chunk in answer_chunks), default=0.0)
     low_confidence = best_score < get_min_score()
+    deep_search_needed = should_run_deep_search(query_context.answer_question, answer_chunks, low_confidence)
+    web_chunks: List[ChunkRecord] = []
+    if deep_search_needed:
+        web_chunks = run_deep_search(query_context.answer_question)
+
+    if web_chunks:
+        use_web_only = is_specific_office_lookup(query_context.answer_question) or low_confidence
+        context_chunks = web_chunks if use_web_only else [*answer_chunks[:3], *web_chunks[:3]]
+        web_sources = [chunk.as_source() for chunk in context_chunks]
+        llm_answer, provider, error = generate_with_llm(query_context.answer_question, context_chunks, target_lang)
+        if llm_answer:
+            answer = append_sources_if_missing(llm_answer, context_chunks)
+            answer = append_caution(answer, query_context.answer_question)
+            return {
+                "answer": answer,
+                "sources": web_sources,
+                "is_fallback": False,
+                "provider": provider,
+                "confidence": round(max((chunk.score for chunk in context_chunks), default=0.0), 3),
+                "low_confidence": False,
+            }
+
+        answer = web_fallback_answer(query_context.answer_question, web_chunks) if use_web_only else fallback_answer(query_context.answer_question, answer_chunks[:3])
+        answer = append_caution(answer, query_context.answer_question)
+        return {
+            "answer": answer,
+            "sources": web_sources,
+            "is_fallback": True,
+            "provider": provider,
+            "confidence": round(max((chunk.score for chunk in web_chunks), default=0.0), 3),
+            "low_confidence": False,
+        }
 
     if not chunks:
-        answer = "I could not find this in the available NYSC documents."
+        answer = web_search_unavailable_answer(query_context.answer_question) if deep_search_needed else "I could not find this in the available NYSC documents."
+        answer = append_caution(answer, query_context.answer_question)
+        return {
+            "answer": answer,
+            "sources": [],
+            "is_fallback": True,
+            "provider": None,
+            "confidence": 0.0,
+            "low_confidence": True,
+        }
+
+    if deep_search_needed and is_specific_office_lookup(query_context.answer_question):
+        answer = web_search_unavailable_answer(query_context.answer_question)
         answer = append_caution(answer, query_context.answer_question)
         return {
             "answer": answer,
